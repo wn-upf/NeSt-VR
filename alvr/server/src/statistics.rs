@@ -278,6 +278,20 @@ impl StatisticsManager {
             } else {
                 0.0
             };
+            let network_throughput_bps: f32 = if client_stats.frame_interarrival != 0.0 {
+                client_stats.rx_bytes as f32 * 8.0 / client_stats.frame_interarrival 
+            }     
+            else{0.0}; 
+
+            let peak_network_throughput_bps: f32 = if client_stats.frame_span != 0.0 {
+                client_stats.bytes_in_frame as f32 * 8.0 / client_stats.frame_span
+            }
+            else{0.0}; 
+            
+            let application_throughput_bps = if client_stats.frame_interarrival != 0.0{
+                client_stats.bytes_in_frame_app as f32 * 8.0 / client_stats.frame_interarrival
+            }
+            else{0.0}; 
 
             // todo: use target timestamp in nanoseconds. the dashboard needs to use the first
             // timestamp as the graph time origin.
@@ -295,6 +309,16 @@ impl StatisticsManager {
                 server_fps,
                 nominal_bitrate: self.last_nominal_bitrate_stats.clone(),
                 actual_bitrate_bps: bitrate_bps,
+
+                jitter_avg_frame: client_stats.jitter_avg_frame, 
+                frame_span: client_stats.frame_span, 
+                frame_interarrival: client_stats.frame_interarrival, 
+                rx_bytes :          client_stats.rx_bytes, 
+
+                network_throughput_bps: network_throughput_bps, 
+                peak_network_throughput_bps: peak_network_throughput_bps, 
+                application_throughput_bps: application_throughput_bps, 
+
             }));
 
             (network_latency, game_time_latency)

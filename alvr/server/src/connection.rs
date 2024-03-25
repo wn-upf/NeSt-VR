@@ -1026,6 +1026,7 @@ fn connection_pipeline(
                     detect_desync(&_game_latency, &mut _last_resync);
 
                     let server_data_lock = SERVER_DATA_MANAGER.read();
+                    
                     BITRATE_MANAGER.lock().report_frame_latencies(
                         &server_data_lock.settings().video.bitrate.mode,
                         timestamp,

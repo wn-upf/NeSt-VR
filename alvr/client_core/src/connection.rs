@@ -33,6 +33,17 @@ use std::{
     time::{Duration, Instant},
 };
 
+
+#[derive(Copy, Clone)]
+pub struct VideoStatsRx{
+    pub jitter_avg_frame:   f32, 
+    pub frame_span:         f32, 
+    pub frame_interarrival: f32, 
+    pub rx_bytes:           u32, 
+    pub bytes_in_frame:     u32, 
+    pub bytes_in_frame_app: u32, 
+}
+
 #[cfg(target_os = "android")]
 use crate::audio;
 #[cfg(not(target_os = "android"))]
@@ -272,6 +283,16 @@ fn connection_pipeline(
 
     info!("Connected to server");
 
+
+    let mut videoStats = VideoStatsRx{
+        jitter_avg_frame: 0.0, 
+        frame_span:        0.0, 
+        frame_interarrival: 0.0,
+        rx_bytes:           0, 
+        bytes_in_frame:     0, 
+        bytes_in_frame_app: 0, 
+    }; 
+
     let mut video_receiver =
         stream_socket.subscribe_to_stream::<VideoPacketHeader>(VIDEO, MAX_UNREAD_PACKETS);
     let mut game_audio_receiver = stream_socket.subscribe_to_stream(AUDIO, MAX_UNREAD_PACKETS);
@@ -295,8 +316,15 @@ fn connection_pipeline(
                     return;
                 };
 
+                videoStats.jitter_avg_frame = data.get_jitter_avg_frame();
+                videoStats.frame_span = data.get_frame_span();
+                videoStats.frame_interarrival += data.get_frame_interarrival(); 
+                videoStats.rx_bytes += data.get_rx_bytes(); 
+                videoStats.bytes_in_frame = data.get_bytes_in_frame(); 
+                videoStats.bytes_in_frame_app = data.get_bytes_in_frame_app(); 
                 if let Some(stats) = &mut *ctx.statistics_manager.lock() {
                     stats.report_video_packet_received(header.timestamp);
+                    stats.report_video_statistics(header.timestamp, videoStats); 
                 }
 
                 if header.is_idr {
@@ -315,6 +343,9 @@ fn connection_pipeline(
                             timestamp: header.timestamp,
                             nal: nal.to_vec(),
                         });
+                        videoStats.frame_interarrival = 0.0; 
+                        videoStats.rx_bytes = 0; 
+
                     } else if !ctx
                         .decoder_sink
                         .lock()

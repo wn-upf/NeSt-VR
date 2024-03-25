@@ -49,6 +49,15 @@ pub struct GraphStatistics {
     pub server_fps: f32,
     pub nominal_bitrate: NominalBitrateStats,
     pub actual_bitrate_bps: f32,
+
+    pub jitter_avg_frame:   f32, 
+    pub frame_span:         f32, 
+    pub frame_interarrival: f32, 
+    pub rx_bytes :          u32, 
+
+    pub network_throughput_bps: f32,
+    pub peak_network_throughput_bps: f32, 
+    pub application_throughput_bps: f32, 
 }
 
 #[derive(Serialize, Deserialize, Clone, Debug)]

@@ -12,6 +12,7 @@ trace-performance = ["profiling/profile-with-tracy"]
 [dependencies]
 alvr_common.workspace = true
 alvr_session.workspace = true
+alvr_packets.workspace = true
 
 bincode = "1"
 profiling = { version = "1", optional = true }
