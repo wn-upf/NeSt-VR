@@ -759,26 +759,24 @@ impl StreamSocket {
                     {   
                         self.rx_shard_counter += 1; 
                     }
-                    
-                    // NB: Can't use entry pattern because we want to allow bailing out on the line above
-                    components.in_progress_packets.insert(
-                        shard_recv_state_mut.packet_index,
-                        InProgressPacket {
-                            buffer,
-                            buffer_length: 0,
-                            // todo: find a way to skipping this allocation
-                            received_shard_indices: HashSet::with_capacity(
-                                shard_recv_state_mut.shards_count,
-                            ),
-                        },
-                    );
                 }
                 else{
                     if shard_recv_state_mut.stream_id == VIDEO{
                     self.duplicated_shard_counter += 1; }
-                }
+                }  
             }
-            
+            // NB: Can't use entry pattern because we want to allow bailing out on the line above
+            components.in_progress_packets.insert(
+            shard_recv_state_mut.packet_index,
+            InProgressPacket {
+                buffer,
+                buffer_length: 0,
+                // todo: find a way to skipping this allocation
+                received_shard_indices: HashSet::with_capacity(
+                    shard_recv_state_mut.shards_count,
+                ),
+            },
+            );
             components
                 .in_progress_packets
                 .get_mut(&shard_recv_state_mut.packet_index)

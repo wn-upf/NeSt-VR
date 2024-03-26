@@ -34,7 +34,7 @@ use std::{
 };
 
 
-#[derive(Copy, Clone)]
+#[derive(Copy, Clone, Debug)]
 pub struct VideoStatsRx{
     pub jitter_avg_frame:   f32, 
     pub frame_span:         f32, 
@@ -48,7 +48,7 @@ pub struct VideoStatsRx{
     pub duplicated_shard_counter: u32,
     pub highest_rx_frame_index: i32, 
     pub highest_rx_shard_index: i32,
-    pub frames_skipped:              u32, 
+    pub frames_skipped:     u32, 
     pub frames_dropped:     u32, 
 }
 
@@ -339,7 +339,6 @@ fn connection_pipeline(
                 videoStats.filtered_ow_delay = data.get_filtered_ow_delay(); 
                 videoStats.highest_rx_frame_index = data.get_highest_rx_frame_index(); 
                 videoStats.highest_rx_shard_index = data.get_highest_rx_shard_index(); 
-
                 
                 videoStats.rx_bytes         += data.get_rx_bytes(); 
                 videoStats.rx_shard_counter += data.get_rx_shard_counter(); 
@@ -347,11 +346,11 @@ fn connection_pipeline(
                 videoStats.frame_interarrival += data.get_frame_interarrival(); 
                 videoStats.frames_skipped += data.get_frames_skipped(); 
 
-
+                warn!("rx frame in client: Videostats = {:?}", videoStats); 
                 if let Some(stats) = &mut *ctx.statistics_manager.lock() {
                     stats.report_video_packet_received(header.timestamp);
+                    stats.report_video_statistics(header.timestamp, videoStats); 
                 }
-
                 if header.is_idr {
                     stream_corrupted = false;
                 } else if data.had_packet_loss() {
@@ -368,16 +367,6 @@ fn connection_pipeline(
                             timestamp: header.timestamp,
                             nal: nal.to_vec(),
                         });
-                        if let Some(stats) = &mut *ctx.statistics_manager.lock() {
-                            stats.report_video_statistics(header.timestamp, videoStats); 
-                        }
-                        videoStats.frame_interarrival = 0.0; 
-                        videoStats.rx_bytes = 0; 
-                        videoStats.duplicated_shard_counter = 0;
-                        videoStats.rx_shard_counter = 0; 
-                        videoStats.frames_skipped = 0; 
-                        videoStats.frames_dropped = 0; 
-
                     } else if !ctx
                         .decoder_sink
                         .lock()
@@ -392,6 +381,14 @@ fn connection_pipeline(
                         videoStats.frames_dropped += 1; 
 
                         warn!("Dropped video packet. Reason: Decoder saturation")
+                    } else {
+                        warn!("resetting videostats in connection/client"); 
+                        videoStats.frame_interarrival = 0.0; 
+                        videoStats.rx_bytes = 0; 
+                        videoStats.duplicated_shard_counter = 0;
+                        videoStats.rx_shard_counter = 0; 
+                        videoStats.frames_skipped = 0; 
+                        videoStats.frames_dropped = 0; 
                     }
                 } else {
                     if let Some(sender) = &mut *ctx.control_sender.lock() {

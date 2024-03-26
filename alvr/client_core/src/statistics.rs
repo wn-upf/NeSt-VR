@@ -7,6 +7,7 @@ use std::{
 
 use crate::connection::VideoStatsRx;
 
+#[derive(Clone)]
 struct HistoryFrame {
     input_acquired: Instant,
     video_packet_received: Instant,
@@ -19,6 +20,8 @@ pub struct StatisticsManager {
     prev_vsync: Instant,
     total_pipeline_latency_average: SlidingWindowAverage<Duration>,
     steamvr_pipeline_latency: Duration,
+
+    stats_history_buffer: VecDeque<HistoryFrame>, 
 }
 
 impl StatisticsManager {
@@ -38,6 +41,7 @@ impl StatisticsManager {
             steamvr_pipeline_latency: Duration::from_secs_f32(
                 steamvr_pipeline_frames * nominal_server_frame_interval.as_secs_f32(),
             ),
+            stats_history_buffer: VecDeque::new(), 
         }
     }
 
@@ -94,6 +98,8 @@ impl StatisticsManager {
             frame.client_stats.highest_rx_shard_index = video_stats.highest_rx_shard_index; 
             frame.client_stats.frames_skipped = video_stats.frames_skipped; 
             frame.client_stats.frames_dropped = video_stats.frames_dropped;
+
+            self.stats_history_buffer.push_back(frame.clone());
         }
     }
     pub fn report_frame_decoded(&mut self, target_timestamp: Duration) {
@@ -146,11 +152,18 @@ impl StatisticsManager {
         }
     }
 
-    pub fn summary(&self, target_timestamp: Duration) -> Option<ClientStatistics> {
-        self.history_buffer
+    pub fn summary(&mut self, target_timestamp: Duration) -> Option<ClientStatistics> {
+        if let Some(index) = self.stats_history_buffer
             .iter()
-            .find(|frame| frame.client_stats.target_timestamp == target_timestamp)
-            .map(|frame| frame.client_stats.clone())
+            .position(|frame| frame.client_stats.target_timestamp == target_timestamp){
+                if let Some(frame) = self.stats_history_buffer.remove(index) {
+                    Some(frame.client_stats)
+                } else {
+                    None
+                }
+            } else {
+                None
+            }
     }
 
     // latency used for head prediction
