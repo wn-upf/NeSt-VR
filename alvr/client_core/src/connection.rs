@@ -50,6 +50,7 @@ pub struct VideoStatsRx{
     pub highest_rx_shard_index: i32,
     pub frames_skipped:     u32, 
     pub frames_dropped:     u32, 
+    pub frame_index:        u32, 
 }
 
 #[cfg(target_os = "android")]
@@ -307,6 +308,7 @@ fn connection_pipeline(
         highest_rx_shard_index: 0,
         frames_skipped:              0, 
         frames_dropped:         0, 
+        frame_index:            0, 
     }; 
 
     let mut video_receiver =
@@ -345,8 +347,9 @@ fn connection_pipeline(
                 videoStats.duplicated_shard_counter += data.get_duplicated_shard_counter(); 
                 videoStats.frame_interarrival += data.get_frame_interarrival(); 
                 videoStats.frames_skipped += data.get_frames_skipped(); 
+                videoStats.frame_index = data.get_frame_index(); 
 
-                warn!("rx frame in client: Videostats = {:?}", videoStats); 
+                // warn!("rx frame in client: Videostats = {:?}", videoStats); 
                 if let Some(stats) = &mut *ctx.statistics_manager.lock() {
                     stats.report_video_packet_received(header.timestamp);
                     stats.report_video_statistics(header.timestamp, videoStats); 
@@ -382,7 +385,7 @@ fn connection_pipeline(
 
                         warn!("Dropped video packet. Reason: Decoder saturation")
                     } else {
-                        warn!("resetting videostats in connection/client"); 
+                        // warn!("resetting videostats in connection/client"); 
                         videoStats.frame_interarrival = 0.0; 
                         videoStats.rx_bytes = 0; 
                         videoStats.duplicated_shard_counter = 0;

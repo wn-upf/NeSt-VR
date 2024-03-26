@@ -98,13 +98,14 @@ impl StatisticsManager {
             frame.client_stats.highest_rx_shard_index = video_stats.highest_rx_shard_index; 
             frame.client_stats.frames_skipped = video_stats.frames_skipped; 
             frame.client_stats.frames_dropped = video_stats.frames_dropped;
+            frame.client_stats.frame_index = video_stats.frame_index; 
 
             self.stats_history_buffer.push_back(frame.clone());
         }
     }
     pub fn report_frame_decoded(&mut self, target_timestamp: Duration) {
         if let Some(frame) = self
-            .history_buffer
+            .stats_history_buffer
             .iter_mut()
             .find(|frame| frame.client_stats.target_timestamp == target_timestamp)
         {
@@ -115,7 +116,7 @@ impl StatisticsManager {
 
     pub fn report_compositor_start(&mut self, target_timestamp: Duration) {
         if let Some(frame) = self
-            .history_buffer
+            .stats_history_buffer
             .iter_mut()
             .find(|frame| frame.client_stats.target_timestamp == target_timestamp)
         {
@@ -131,7 +132,7 @@ impl StatisticsManager {
         let now = Instant::now();
 
         if let Some(frame) = self
-            .history_buffer
+            .stats_history_buffer
             .iter_mut()
             .find(|frame| frame.client_stats.target_timestamp == target_timestamp)
         {

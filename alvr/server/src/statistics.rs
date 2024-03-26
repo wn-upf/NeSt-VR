@@ -386,7 +386,7 @@ impl StatisticsManager {
                 frame_loss :            client_stats.frames_skipped + client_stats.frames_dropped, 
 
                 shard_loss_server:  shard_loss_server, 
-                frame_index: frame.frame_index,
+                frame_index: client_stats.frame_index,
                 is_idr:  frame.is_idr,
                 target_timestamp: client_stats.target_timestamp,
 
@@ -398,14 +398,7 @@ impl StatisticsManager {
         }
     }
 
-    pub fn report_frame_sent(&mut self, target_timestamp: Duration, frame_sent_id: u32, spf: usize){
-        if let Some(frame) = self
-        .history_buffer
-        .iter_mut()
-        .find(|frame| frame.target_timestamp == target_timestamp)
-    {
-        frame.frame_index = frame_sent_id;
-    }
+    pub fn report_frame_sent(&mut self, frame_sent_id: u32, spf: usize){
         self.map_frames_spf.insert(frame_sent_id, spf); 
     }
 
