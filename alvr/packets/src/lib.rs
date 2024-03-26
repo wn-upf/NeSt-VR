@@ -337,6 +337,14 @@ pub struct ClientStatistics {
     pub rx_bytes:           u32, 
     pub bytes_in_frame:     u32, 
     pub bytes_in_frame_app: u32, 
+
+    pub filtered_ow_delay:      f32, 
+    pub rx_shard_counter:       u32, 
+    pub duplicated_shard_counter: u32,
+    pub highest_rx_frame_index: i32, 
+    pub highest_rx_shard_index: i32,
+    pub frames_skipped:              u32, 
+    pub frames_dropped:         u32, 
 }
 
 #[derive(Serialize, Deserialize, Clone, Debug)]

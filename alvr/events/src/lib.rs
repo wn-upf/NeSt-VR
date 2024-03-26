@@ -54,10 +54,22 @@ pub struct GraphStatistics {
     pub frame_span:         f32, 
     pub frame_interarrival: f32, 
     pub rx_bytes :          u32, 
-
     pub network_throughput_bps: f32,
     pub peak_network_throughput_bps: f32, 
     pub application_throughput_bps: f32, 
+    
+    pub filtered_ow_delay:      f32, 
+    pub rx_shard_counter:       u32, 
+    pub duplicated_shard_counter: u32,
+    pub frames_dropped:           u32, 
+    pub frames_skipped:              u32, 
+    pub frame_loss:               u32, 
+    pub shard_loss_server:       usize, 
+
+    pub frame_index: u32,
+    pub is_idr: bool,
+    pub target_timestamp: Duration
+
 }
 
 #[derive(Serialize, Deserialize, Clone, Debug)]

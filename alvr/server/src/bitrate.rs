@@ -26,6 +26,8 @@ pub struct BitrateManager {
     dynamic_max_bitrate: f32,
     previous_config: Option<BitrateConfig>,
     update_needed: bool,
+
+    last_target_bitrate: f32, 
 }
 
 impl BitrateManager {
@@ -52,6 +54,7 @@ impl BitrateManager {
             dynamic_max_bitrate: f32::MAX,
             previous_config: None,
             update_needed: true,
+            last_target_bitrate: 30_000_000.0, 
         }
     }
 
@@ -185,7 +188,9 @@ impl BitrateManager {
                 encoder_latency_limiter,
                 ..
             } => {
-                let initial_bitrate_average_bps = self.bitrate_average.get_average();
+
+                // let initial_bitrate_average_bps = self.bitrate_average.get_average();
+                let initial_bitrate_average_bps = self.last_target_bitrate; 
 
                 let mut bitrate_bps = initial_bitrate_average_bps * saturation_multiplier;
                 stats.scaled_calculated_bps = Some(bitrate_bps);
@@ -231,7 +236,6 @@ impl BitrateManager {
                 bitrate_bps
             }
         };
-
         stats.requested_bps = bitrate_bps;
 
         let frame_interval = if config.adapt_to_framerate.enabled() {
@@ -239,6 +243,7 @@ impl BitrateManager {
         } else {
             self.nominal_frame_interval
         };
+        self.last_target_bitrate = bitrate_bps; 
 
         (
             FfiDynamicEncoderParams {
