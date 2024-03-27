@@ -331,21 +331,26 @@ pub struct ClientStatistics {
     pub vsync_queue: Duration,
     pub total_pipeline_latency: Duration,
 
-    pub jitter_avg_frame:   f32, 
-    pub frame_span:         f32, 
-    pub frame_interarrival: f32, 
-    pub rx_bytes:           u32, 
-    pub bytes_in_frame:     u32, 
-    pub bytes_in_frame_app: u32, 
+    pub frame_index: i32,
 
-    pub filtered_ow_delay:      f32, 
-    pub rx_shard_counter:       u32, 
+    pub frame_span: f32,
+    pub frame_interarrival: f32,
+
+    pub jitter_avg_frame: f32,
+    pub filtered_ow_delay: f32,
+
+    pub rx_bytes: u32,
+    pub bytes_in_frame: u32,
+    pub bytes_in_frame_app: u32,
+
+    pub frames_skipped: u32,
+    pub frames_dropped: u32,
+
+    pub rx_shard_counter: u32,
     pub duplicated_shard_counter: u32,
-    pub highest_rx_frame_index: i32, 
+
+    pub highest_rx_frame_index: i32,
     pub highest_rx_shard_index: i32,
-    pub frames_skipped:              u32, 
-    pub frames_dropped:         u32, 
-    pub frame_index:            u32, 
 }
 
 #[derive(Serialize, Deserialize, Clone, Debug)]

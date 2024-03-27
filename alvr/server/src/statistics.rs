@@ -1,4 +1,4 @@
-use alvr_common::{SlidingWindowAverage, HEAD_ID};
+use alvr_common::{warn, SlidingWindowAverage, HEAD_ID};
 use alvr_events::{EventType, GraphStatistics, NominalBitrateStats, StatisticsSummary};
 use alvr_packets::ClientStatistics;
 use std::{
@@ -8,6 +8,7 @@ use std::{
 
 const FULL_REPORT_INTERVAL: Duration = Duration::from_millis(500);
 
+#[derive(Clone)]
 pub struct HistoryFrame {
     target_timestamp: Duration,
 
@@ -18,8 +19,11 @@ pub struct HistoryFrame {
     video_packet_bytes: usize,
     total_pipeline_latency: Duration,
 
-    frame_index: u32,
+    frame_index: i32,
     is_idr: bool,
+
+    is_composed: bool,
+    is_encoded: bool,
 }
 
 impl Default for HistoryFrame {
@@ -27,14 +31,19 @@ impl Default for HistoryFrame {
         let now = Instant::now();
         Self {
             target_timestamp: Duration::ZERO,
+
             tracking_received: now,
             frame_present: now,
             frame_composed: now,
             frame_encoded: now,
             video_packet_bytes: 0,
             total_pipeline_latency: Duration::ZERO,
-            frame_index: 0,
+
+            frame_index: -1,
             is_idr: false,
+
+            is_composed: false,
+            is_encoded: false,
         }
     }
 }
@@ -48,9 +57,11 @@ struct BatteryData {
 pub struct StatisticsManager {
     history_buffer: VecDeque<HistoryFrame>,
     max_history_size: usize,
+
     last_full_report_instant: Instant,
     last_frame_present_instant: Instant,
     last_frame_present_interval: Duration,
+
     video_packets_total: usize,
     video_packets_partial_sum: usize,
     video_bytes_total: usize,
@@ -64,9 +75,11 @@ pub struct StatisticsManager {
     frame_interval: Duration,
     last_nominal_bitrate_stats: NominalBitrateStats,
 
+    stats_history_buffer: VecDeque<HistoryFrame>,
     map_frames_spf: HashMap<u32, usize>,
+
     prev_highest_shard: i32,
-    prev_highest_frame: i32, 
+    prev_highest_frame: i32,
 }
 
 impl StatisticsManager {
@@ -79,6 +92,7 @@ impl StatisticsManager {
         Self {
             history_buffer: VecDeque::new(),
             max_history_size,
+
             last_full_report_instant: Instant::now(),
             last_frame_present_instant: Instant::now(),
             last_frame_present_interval: Duration::ZERO,
@@ -99,10 +113,12 @@ impl StatisticsManager {
             last_vsync_time: Instant::now(),
             frame_interval: nominal_server_frame_interval,
             last_nominal_bitrate_stats: NominalBitrateStats::default(),
-            
-            map_frames_spf: HashMap::new(), 
+
+            stats_history_buffer: VecDeque::new(),
+            map_frames_spf: HashMap::new(),
+
             prev_highest_shard: -1,
-            prev_highest_frame: -1, 
+            prev_highest_frame: 0,
         }
     }
 
@@ -137,15 +153,24 @@ impl StatisticsManager {
             self.last_frame_present_instant = now;
 
             frame.frame_present = now;
+            warn!("frame {} presented", target_timestamp.as_secs_f32()); // remove
+            self.stats_history_buffer.push_back(frame.clone());
+
+            if self.stats_history_buffer.len() > self.max_history_size {
+                self.stats_history_buffer.pop_front();
+            }
         }
     }
 
     pub fn report_frame_composed(&mut self, target_timestamp: Duration, offset: Duration) {
         if let Some(frame) = self
-            .history_buffer
+            .stats_history_buffer
             .iter_mut()
-            .find(|frame| frame.target_timestamp == target_timestamp)
+            .find(|frame| frame.target_timestamp == target_timestamp && !frame.is_composed)
         {
+            frame.is_composed = true;
+            warn!("frame {} composed", target_timestamp.as_secs_f32()); // remove
+
             frame.frame_composed = Instant::now() - offset;
         }
     }
@@ -154,7 +179,8 @@ impl StatisticsManager {
     pub fn report_frame_encoded(
         &mut self,
         target_timestamp: Duration,
-        bytes_count: usize, is_idr: bool,
+        bytes_count: usize,
+        is_idr: bool,
     ) -> Duration {
         self.video_packets_total += 1;
         self.video_packets_partial_sum += 1;
@@ -162,15 +188,21 @@ impl StatisticsManager {
         self.video_bytes_partial_sum += bytes_count;
 
         if let Some(frame) = self
-            .history_buffer
+            .stats_history_buffer
             .iter_mut()
-            .find(|frame| frame.target_timestamp == target_timestamp)
+            .find(|frame| frame.target_timestamp == target_timestamp && !frame.is_encoded)
         {
+            frame.is_idr = is_idr;
+            frame.is_encoded = true;
+            warn!(
+                "frame {} encoded, bytes count {}",
+                target_timestamp.as_secs_f32(),
+                bytes_count
+            ); // remove
+
             frame.frame_encoded = Instant::now();
 
             frame.video_packet_bytes = bytes_count;
-
-            frame.is_idr = is_idr;
 
             frame
                 .frame_encoded
@@ -180,7 +212,24 @@ impl StatisticsManager {
         }
     }
 
+    pub fn report_frame_sent(
+        &mut self,
+        target_timestamp: Duration,
+        frame_index: u32,
+        shards_count: usize,
+    ) {
+        if let Some(frame) = self
+            .stats_history_buffer
+            .iter_mut()
+            .find(|frame| frame.target_timestamp == target_timestamp && frame.frame_index == -1)
+        {
+            frame.frame_index = frame_index as i32;
+        }
+        self.map_frames_spf.insert(frame_index, shards_count);
+    }
+
     pub fn report_packet_loss(&mut self) {
+        // this is wrong, only increments by 1 if there is frames skipped, regardless of the number of frames skipped
         self.packets_lost_total += 1;
         self.packets_lost_partial_sum += 1;
     }
@@ -200,9 +249,9 @@ impl StatisticsManager {
     // Returns (network latency, game time latency)
     pub fn report_statistics(&mut self, client_stats: ClientStatistics) -> (Duration, Duration) {
         if let Some(frame) = self
-            .history_buffer
+            .stats_history_buffer
             .iter_mut()
-            .find(|frame| frame.target_timestamp == client_stats.target_timestamp)
+            .find(|frame| frame.frame_index == client_stats.frame_index)
         {
             frame.total_pipeline_latency = client_stats.total_pipeline_latency;
 
@@ -295,63 +344,81 @@ impl StatisticsManager {
                 0.0
             };
             let network_throughput_bps: f32 = if client_stats.frame_interarrival != 0.0 {
-                client_stats.rx_bytes as f32 * 8.0 / client_stats.frame_interarrival 
-            }     
-            else{0.0}; 
+                client_stats.rx_bytes as f32 * 8.0 / client_stats.frame_interarrival
+            } else {
+                0.0
+            };
 
             let peak_network_throughput_bps: f32 = if client_stats.frame_span != 0.0 {
                 client_stats.bytes_in_frame as f32 * 8.0 / client_stats.frame_span
-            }
-            else{0.0}; 
-            
-            let application_throughput_bps = if client_stats.frame_interarrival != 0.0{
-                client_stats.bytes_in_frame_app as f32 * 8.0 / client_stats.frame_interarrival
-            }
-            else{0.0}; 
+            } else {
+                0.0
+            };
 
+            let application_throughput_bps = if client_stats.frame_interarrival != 0.0 {
+                client_stats.bytes_in_frame_app as f32 * 8.0 / client_stats.frame_interarrival
+            } else {
+                0.0
+            };
 
             let mut shards_sent: usize = 0;
-            // let shard_loss: 
-            let mut shard_loss_server: usize = 0; 
+            let shard_loss_server: usize;
 
             if self.prev_highest_frame == client_stats.highest_rx_frame_index as i32 {
 
-                if self.prev_highest_shard < client_stats.highest_rx_shard_index as i32{
-                    shards_sent =  (client_stats.highest_rx_shard_index - self.prev_highest_shard) as usize;
-                    self.prev_highest_shard = client_stats.highest_rx_shard_index as i32; 
+                if self.prev_highest_shard < client_stats.highest_rx_shard_index as i32 {
+                    shards_sent =
+                        (client_stats.highest_rx_shard_index - self.prev_highest_shard) as usize;
+
+                    self.prev_highest_shard = client_stats.highest_rx_shard_index as i32;
                 }
-                shard_loss_server = shards_sent - client_stats.rx_shard_counter as usize; 
-            }
-            else if self.prev_highest_frame < client_stats.highest_rx_frame_index as i32{
-                let mut shards_from_prev: usize = 0;
-                if let Some(shards_count_prev) = self.map_frames_spf.get(&(self.prev_highest_frame as u32)){
-                    shards_from_prev = *shards_count_prev  - (self.prev_highest_shard - 1) as usize; 
-                }
-                
-                let shards_from_inbetween_frames: usize = self.map_frames_spf.iter()
-                    .filter(|&(frame, _ )| *frame > self.prev_highest_frame as u32 && *frame < client_stats.highest_rx_frame_index as u32)
-                    .map(|(_, val)| *val).sum(); 
+
+            } else if self.prev_highest_frame < client_stats.highest_rx_frame_index as i32 {
+
+                let shards_from_prev =
+                    match self.map_frames_spf.get(&(self.prev_highest_frame as u32)) {
+                        Some(&shards_count_prev) => {
+                            shards_count_prev.saturating_sub(self.prev_highest_shard as usize + 1)
+                        }
+                        None => 0,
+                    };
+
+                let shards_from_inbetween: usize = self
+                    .map_frames_spf
+                    .iter()
+                    .filter(|&(frame, _)| {
+                        *frame > self.prev_highest_frame as u32
+                            && *frame < client_stats.highest_rx_frame_index as u32
+                    })
+                    .map(|(_, val)| *val)
+                    .sum();
 
                 let shards_from_actual: usize = client_stats.highest_rx_shard_index as usize + 1;
 
-                let shards_sent = shards_from_prev + shards_from_inbetween_frames + shards_from_actual; 
-                
-                shard_loss_server = shards_sent - client_stats.rx_shard_counter as usize; 
+                shards_sent = shards_from_prev + shards_from_inbetween + shards_from_actual;
+                warn!("shards_sent for frame {} with {} shards are {}", client_stats.frame_index, self.map_frames_spf.get(&(client_stats.frame_index as u32)).unwrap(), shards_sent); // remove
+                warn!("shards_from_prev for frame {}  are {}", client_stats.frame_index, shards_from_prev); // remove
+                warn!("shards_from_inbetween for frame {}  are {}", client_stats.frame_index, shards_from_inbetween); // remove
+                warn!("shards_from_actual for frame {}  are {}", client_stats.frame_index, shards_from_actual); // remove
+                warn!("shards_rx for frame {}  are {}", client_stats.frame_index, client_stats.rx_shard_counter); // remove
 
-                self.prev_highest_frame = client_stats.highest_rx_frame_index as i32; 
+                self.prev_highest_frame = client_stats.highest_rx_frame_index as i32;
                 self.prev_highest_shard = client_stats.highest_rx_shard_index as i32;
 
+                let keys_to_drop: Vec<_> = self
+                    .map_frames_spf
+                    .iter()
+                    .filter(|&(frame, _)| *frame < self.prev_highest_frame as u32)
+                    .map(|(key, _)| *key)
+                    .collect();
 
-                let keys_to_drop: Vec<_> = self.map_frames_spf
-                                    .iter()
-                                    .filter(|&(frame,_)| *frame < self.prev_highest_frame as u32)
-                                    .map(|(key, _)| *key)
-                                    .collect(); 
-
-                for key in keys_to_drop{
+                for key in keys_to_drop {
                     self.map_frames_spf.remove_entry(&key);
                 }
             }
+
+            shard_loss_server = shards_sent - client_stats.rx_shard_counter as usize;
+
             // todo: use target timestamp in nanoseconds. the dashboard needs to use the first
             // timestamp as the graph time origin.
             alvr_events::send_event(EventType::GraphStatistics(GraphStatistics {
@@ -369,37 +436,35 @@ impl StatisticsManager {
                 nominal_bitrate: self.last_nominal_bitrate_stats.clone(),
                 actual_bitrate_bps: bitrate_bps,
 
-                jitter_avg_frame: client_stats.jitter_avg_frame, 
-                frame_span: client_stats.frame_span, 
-                frame_interarrival: client_stats.frame_interarrival, 
-                rx_bytes :          client_stats.rx_bytes, 
+                is_idr: frame.is_idr,
+                frame_index: client_stats.frame_index as u32,
 
-                network_throughput_bps: network_throughput_bps, 
-                peak_network_throughput_bps: peak_network_throughput_bps, 
-                application_throughput_bps: application_throughput_bps, 
+                frame_span_s: client_stats.frame_span,
+                frame_interarrival_s: client_stats.frame_interarrival,
 
-                filtered_ow_delay:      client_stats.filtered_ow_delay, 
-                rx_shard_counter:       client_stats.rx_shard_counter, 
-                duplicated_shard_counter: client_stats.duplicated_shard_counter,
-                frames_skipped:         client_stats.frames_skipped, 
-                frames_dropped:         client_stats.frames_dropped, 
-                frame_loss :            client_stats.frames_skipped + client_stats.frames_dropped, 
+                jitter_avg_frame: client_stats.jitter_avg_frame,
+                filtered_ow_delay: client_stats.filtered_ow_delay,
 
-                shard_loss_server:  shard_loss_server, 
-                frame_index: client_stats.frame_index,
-                is_idr:  frame.is_idr,
-                target_timestamp: client_stats.target_timestamp,
+                network_throughput_bps: network_throughput_bps,
+                peak_network_throughput_bps: peak_network_throughput_bps,
+                application_throughput_bps: application_throughput_bps,
 
+                frames_skipped: client_stats.frames_skipped,
+                frames_dropped: client_stats.frames_dropped,
+                frame_loss: client_stats.frames_skipped + client_stats.frames_dropped,
+
+                shards_lost: shard_loss_server,
+                shards_duplicated: client_stats.duplicated_shard_counter,
             }));
 
             (network_latency, game_time_latency)
         } else {
+            warn!(
+                "Frame {} not found in statistics history buffer!",
+                client_stats.frame_index
+            );
             (Duration::ZERO, Duration::ZERO)
         }
-    }
-
-    pub fn report_frame_sent(&mut self, frame_sent_id: u32, spf: usize){
-        self.map_frames_spf.insert(frame_sent_id, spf); 
     }
 
     pub fn video_pipeline_latency_average(&self) -> Duration {

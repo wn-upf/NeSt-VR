@@ -666,12 +666,12 @@ fn connection_pipeline(
                     .get_range_mut(0, payload.len())
                     .copy_from_slice(&payload);
                 video_sender.send(buffer).ok();
-                
-                let frame_sent_id = video_sender.get_last_packet_id();
-                let spf = video_sender.get_shards_count(); 
+
+                let frame_index = video_sender.get_last_packet_id();
+                let shards_count = video_sender.get_shards_count();
 
                 if let Some(stats) = &mut *STATISTICS_MANAGER.lock() {
-                    stats.report_frame_sent(frame_sent_id, spf);  
+                    stats.report_frame_sent(header.timestamp, frame_index, shards_count);
                 }
             }
         }
@@ -1027,12 +1027,12 @@ fn connection_pipeline(
                     let timestamp = client_stats.target_timestamp;
                     let decoder_latency = client_stats.video_decode;
                     let (network_latency, _game_latency) = stats.report_statistics(client_stats);
-                    
+
                     #[cfg(target_os = "linux")]
                     detect_desync(&_game_latency, &mut _last_resync);
 
                     let server_data_lock = SERVER_DATA_MANAGER.read();
-                    
+
                     BITRATE_MANAGER.lock().report_frame_latencies(
                         &server_data_lock.settings().video.bitrate.mode,
                         timestamp,
