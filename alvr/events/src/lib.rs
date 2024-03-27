@@ -4,6 +4,7 @@ use alvr_session::SessionConfig;
 use serde::{Deserialize, Serialize};
 use std::{path::PathBuf, time::Duration};
 
+use alvr_common::StatesWebrtc; 
 #[derive(Serialize, Deserialize, Clone, Debug, Default)]
 pub struct StatisticsSummary {
     pub video_packets_total: usize,
@@ -69,6 +70,9 @@ pub struct GraphStatistics {
 
     pub shards_lost: usize,
     pub shards_duplicated: u32,
+
+    pub threshold_gcc: f32, 
+    pub internal_state_gcc: StatesWebrtc, 
 }
 
 #[derive(Serialize, Deserialize, Clone, Debug)]

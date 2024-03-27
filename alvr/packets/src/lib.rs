@@ -14,6 +14,8 @@ use std::{
     time::Duration,
 };
 
+use alvr_common::StatesWebrtc; 
+
 pub const TRACKING: u16 = 0;
 pub const HAPTICS: u16 = 1;
 pub const AUDIO: u16 = 2;
@@ -321,6 +323,7 @@ pub enum ClientListAction {
     SetConnectionState(ConnectionState),
 }
 
+
 #[derive(Serialize, Deserialize, Default, Clone)]
 pub struct ClientStatistics {
     pub target_timestamp: Duration, // identifies the frame
@@ -351,6 +354,9 @@ pub struct ClientStatistics {
 
     pub highest_rx_frame_index: i32,
     pub highest_rx_shard_index: i32,
+
+    pub threshold_gcc: f32, 
+    pub internal_state_gcc: StatesWebrtc, 
 }
 
 #[derive(Serialize, Deserialize, Clone, Debug)]

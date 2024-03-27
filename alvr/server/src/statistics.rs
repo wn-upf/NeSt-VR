@@ -441,6 +441,9 @@ impl StatisticsManager {
 
                 shards_lost: shard_loss_server,
                 shards_duplicated: client_stats.duplicated_shard_counter,
+
+                threshold_gcc: client_stats.threshold_gcc, 
+                internal_state_gcc: client_stats.internal_state_gcc, 
             }));
 
             (network_latency, game_time_latency)

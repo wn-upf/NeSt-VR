@@ -59,6 +59,16 @@ pub enum LifecycleState {
     ShuttingDown,
 }
 
+#[derive(Serialize, Deserialize, Clone, Copy, Default, Debug)]
+pub enum StatesWebrtc{
+    OVERUSE,
+    UNDERUSE,
+    #[default]
+    NORMAL,
+}
+
+
+
 #[derive(Serialize, Deserialize, Clone, Debug, PartialEq, Eq, Default)]
 pub enum ConnectionState {
     #[default]
