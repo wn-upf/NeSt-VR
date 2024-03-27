@@ -84,10 +84,7 @@ impl StatisticsManager {
         {
             frame.video_packet_received = Instant::now();
             self.stats_history_buffer.push_back(frame.clone());
-            warn!(
-                "frame {} video packet received",
-                target_timestamp.as_secs_f32()
-            ); // remove
+
             if self.stats_history_buffer.len() > self.max_history_size {
                 self.stats_history_buffer.pop_front();
             }
@@ -123,11 +120,6 @@ impl StatisticsManager {
 
             frame.client_stats.highest_rx_frame_index = video_stats.highest_rx_frame_index;
             frame.client_stats.highest_rx_shard_index = video_stats.highest_rx_shard_index;
-            warn!(
-                "frame {} index {} statistics client reported",
-                target_timestamp.as_secs_f32(),
-                video_stats.frame_index
-            ); // remove
         }
     }
 
@@ -146,11 +138,6 @@ impl StatisticsManager {
             frame.client_stats.target_timestamp == target_timestamp && !frame.is_decoded
         }) {
             frame.is_decoded = true;
-            warn!(
-                "frame {} index {} decoded",
-                target_timestamp.as_secs_f32(),
-                frame.client_stats.frame_index
-            ); // remove
 
             frame.client_stats.video_decode =
                 Instant::now().saturating_duration_since(frame.video_packet_received);
@@ -162,11 +149,6 @@ impl StatisticsManager {
             frame.client_stats.target_timestamp == target_timestamp && !frame.is_composed
         }) {
             frame.is_composed = true;
-            warn!(
-                "frame {} index {} composed",
-                target_timestamp.as_secs_f32(),
-                frame.client_stats.frame_index
-            ); // remove
 
             frame.client_stats.video_decoder_queue = Instant::now().saturating_duration_since(
                 frame.video_packet_received + frame.client_stats.video_decode,
@@ -183,11 +165,6 @@ impl StatisticsManager {
             frame.client_stats.target_timestamp == target_timestamp && !frame.is_submitted
         }) {
             frame.is_submitted = true;
-            warn!(
-                "frame {} index {} submitted",
-                target_timestamp.as_secs_f32(),
-                frame.client_stats.frame_index
-            ); // remove
 
             frame.client_stats.rendering = now.saturating_duration_since(
                 frame.video_packet_received
@@ -230,11 +207,6 @@ impl StatisticsManager {
                         true
                     }
                 });
-                warn!(
-                    "frame {} index {} stats client sent",
-                    target_timestamp.as_secs_f32(),
-                    frame_client_stats_clone.frame_index
-                ); // remove
                 Some(frame_client_stats_clone)
             } else {
                 None

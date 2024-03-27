@@ -153,7 +153,7 @@ impl StatisticsManager {
             self.last_frame_present_instant = now;
 
             frame.frame_present = now;
-            warn!("frame {} presented", target_timestamp.as_secs_f32()); // remove
+
             self.stats_history_buffer.push_back(frame.clone());
 
             if self.stats_history_buffer.len() > self.max_history_size {
@@ -169,7 +169,6 @@ impl StatisticsManager {
             .find(|frame| frame.target_timestamp == target_timestamp && !frame.is_composed)
         {
             frame.is_composed = true;
-            warn!("frame {} composed", target_timestamp.as_secs_f32()); // remove
 
             frame.frame_composed = Instant::now() - offset;
         }
@@ -194,11 +193,6 @@ impl StatisticsManager {
         {
             frame.is_idr = is_idr;
             frame.is_encoded = true;
-            warn!(
-                "frame {} encoded, bytes count {}",
-                target_timestamp.as_secs_f32(),
-                bytes_count
-            ); // remove
 
             frame.frame_encoded = Instant::now();
 
@@ -365,16 +359,13 @@ impl StatisticsManager {
             let shard_loss_server: usize;
 
             if self.prev_highest_frame == client_stats.highest_rx_frame_index as i32 {
-
                 if self.prev_highest_shard < client_stats.highest_rx_shard_index as i32 {
                     shards_sent =
                         (client_stats.highest_rx_shard_index - self.prev_highest_shard) as usize;
 
                     self.prev_highest_shard = client_stats.highest_rx_shard_index as i32;
                 }
-
             } else if self.prev_highest_frame < client_stats.highest_rx_frame_index as i32 {
-
                 let shards_from_prev =
                     match self.map_frames_spf.get(&(self.prev_highest_frame as u32)) {
                         Some(&shards_count_prev) => {
@@ -396,11 +387,6 @@ impl StatisticsManager {
                 let shards_from_actual: usize = client_stats.highest_rx_shard_index as usize + 1;
 
                 shards_sent = shards_from_prev + shards_from_inbetween + shards_from_actual;
-                warn!("shards_sent for frame {} with {} shards are {}", client_stats.frame_index, self.map_frames_spf.get(&(client_stats.frame_index as u32)).unwrap(), shards_sent); // remove
-                warn!("shards_from_prev for frame {}  are {}", client_stats.frame_index, shards_from_prev); // remove
-                warn!("shards_from_inbetween for frame {}  are {}", client_stats.frame_index, shards_from_inbetween); // remove
-                warn!("shards_from_actual for frame {}  are {}", client_stats.frame_index, shards_from_actual); // remove
-                warn!("shards_rx for frame {}  are {}", client_stats.frame_index, client_stats.rx_shard_counter); // remove
 
                 self.prev_highest_frame = client_stats.highest_rx_frame_index as i32;
                 self.prev_highest_shard = client_stats.highest_rx_shard_index as i32;

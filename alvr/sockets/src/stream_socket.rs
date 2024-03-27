@@ -17,7 +17,7 @@
 // cannot be removed. This is because we need to make sure at least shards are written whole.
 use crate::backend::{tcp, udp, SocketReader, SocketWriter};
 use alvr_common::{
-    anyhow::Result, debug, parking_lot::Mutex, warn, AnyhowToCon, ConResult, HandleTryAgain, ToCon,
+    anyhow::Result, debug, parking_lot::Mutex, AnyhowToCon, ConResult, HandleTryAgain, ToCon,
 };
 use alvr_packets::VIDEO;
 use alvr_session::{DscpTos, SocketBufferSize, SocketProtocol};
