@@ -5,6 +5,8 @@ use std::{
     time::{Duration, Instant},
 };
 
+use crate::connection::VideoStatsRx;
+
 struct HistoryFrame {
     input_acquired: Instant,
     video_packet_received: Instant,
@@ -71,6 +73,21 @@ impl StatisticsManager {
         }
     }
 
+    pub fn report_video_statistics(&mut self, target_timestamp: Duration, video_stats: VideoStatsRx)
+    {
+        if let Some(frame) = self
+        .history_buffer
+        .iter_mut()
+        .find(|frame| frame.client_stats.target_timestamp == target_timestamp)
+        {
+            frame.client_stats.jitter_avg_frame = video_stats.jitter_avg_frame; 
+            frame.client_stats.frame_span = video_stats.frame_span; 
+            frame.client_stats.frame_interarrival = video_stats.frame_interarrival;
+            frame.client_stats.rx_bytes = video_stats.rx_bytes;      
+            frame.client_stats.bytes_in_frame = video_stats.bytes_in_frame;  
+            frame.client_stats.bytes_in_frame_app = video_stats.bytes_in_frame_app; 
+        }
+    }
     pub fn report_frame_decoded(&mut self, target_timestamp: Duration) {
         if let Some(frame) = self
             .history_buffer

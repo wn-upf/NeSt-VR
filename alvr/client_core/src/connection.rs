@@ -37,6 +37,16 @@ use std::{
     time::{Duration, Instant},
 };
 
+#[derive(Copy, Clone)]
+pub struct VideoStatsRx{
+    pub jitter_avg_frame:   f32, 
+    pub frame_span:         f32, 
+    pub frame_interarrival: f32, 
+    pub rx_bytes:           u32, 
+    pub bytes_in_frame:     u32, 
+    pub bytes_in_frame_app: u32, 
+}
+
 #[cfg(target_os = "android")]
 use crate::audio;
 #[cfg(not(target_os = "android"))]
@@ -271,7 +281,14 @@ fn connection_pipeline(
     )?;
 
     info!("Connected to server");
-
+    let mut videoStats = VideoStatsRx{
+        jitter_avg_frame: 0.0, 
+        frame_span:        0.0, 
+        frame_interarrival: 0.0,
+        rx_bytes:           0, 
+        bytes_in_frame:     0, 
+        bytes_in_frame_app: 0, 
+    }; 
     {
         let config = &mut *DECODER_INIT_CONFIG.lock();
 
@@ -288,6 +305,7 @@ fn connection_pipeline(
         stream_socket.subscribe_to_stream::<Haptics>(HAPTICS, MAX_UNREAD_PACKETS);
     let statistics_sender = stream_socket.request_stream(STATISTICS);
 
+
     let video_receive_thread = thread::spawn(move || {
         let mut stream_corrupted = false;
         while is_streaming() {
@@ -300,8 +318,16 @@ fn connection_pipeline(
                 return;
             };
 
+            videoStats.jitter_avg_frame = data.get_jitter_avg_frame();
+            videoStats.frame_span = data.get_frame_span();
+            videoStats.frame_interarrival += data.get_frame_interarrival(); 
+            videoStats.rx_bytes += data.get_rx_bytes(); 
+            videoStats.bytes_in_frame = data.get_bytes_in_frame(); 
+            videoStats.bytes_in_frame_app = data.get_bytes_in_frame_app();
+
             if let Some(stats) = &mut *STATISTICS_MANAGER.lock() {
                 stats.report_video_packet_received(header.timestamp);
+                stats.report_video_statistics(header.timestamp, videoStats);
             }
 
             if header.is_idr {

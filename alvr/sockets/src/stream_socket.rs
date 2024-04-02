@@ -16,6 +16,10 @@
 // Note: We can't clone the underlying socket for each StreamSender and the mutex around the socket
 // cannot be removed. This is because we need to make sure at least shards are written whole.
 
+use alvr_packets::VIDEO;
+// use socket2::Socket; 
+use core::cmp::Reverse;
+
 use crate::backend::{tcp, udp, SocketReader, SocketWriter};
 use alvr_common::{
     anyhow::Result, debug, parking_lot::Mutex, AnyhowToCon, ConResult, HandleTryAgain, ToCon,
@@ -29,14 +33,15 @@ use std::{
     mem,
     net::{IpAddr, TcpListener, UdpSocket},
     sync::{mpsc, Arc},
-    time::Duration,
+    time::{Duration, Instant},
 };
 
 const SHARD_PREFIX_SIZE: usize = mem::size_of::<u32>() // packet length - field itself (4 bytes)
     + mem::size_of::<u16>() // stream ID
     + mem::size_of::<u32>() // packet index
     + mem::size_of::<u32>() // shards count
-    + mem::size_of::<u32>(); // shards index
+    + mem::size_of::<u32>() // shards index
+    + mem::size_of::<f32>(); //timestamp of send time
 
 /// Memory buffer that contains a hidden prefix
 #[derive(Default)]
@@ -93,6 +98,8 @@ pub struct StreamSender<H> {
     next_packet_index: u32,
     used_buffers: Vec<Vec<u8>>,
     _phantom: PhantomData<H>,
+
+    last_shard_instant: Option<Instant>, 
 }
 
 impl<H> StreamSender<H> {
@@ -103,7 +110,7 @@ impl<H> StreamSender<H> {
         let actual_buffer_size = buffer.hidden_offset + buffer.length;
         let data_size = actual_buffer_size - SHARD_PREFIX_SIZE;
         let shards_count = (data_size as f32 / max_shard_data_size as f32).ceil() as usize;
-
+        let mut duration: f32 = Duration::ZERO.as_secs_f32();
         for idx in 0..shards_count {
             // this overlaps with the previous shard, this is intended behavior and allows to
             // reduce allocations
@@ -115,7 +122,10 @@ impl<H> StreamSender<H> {
                 self.max_packet_size,
                 actual_buffer_size - packet_start_position,
             );
-
+            let now = Instant::now();
+            if let Some(shard_instant) = self.last_shard_instant{
+                duration = now.duration_since(shard_instant).as_secs_f32(); 
+            }
             // todo: switch to little endian
             // todo: do not remove sizeof<u32> for packet length
             sub_buffer[0..4]
@@ -124,10 +134,12 @@ impl<H> StreamSender<H> {
             sub_buffer[6..10].copy_from_slice(&self.next_packet_index.to_be_bytes());
             sub_buffer[10..14].copy_from_slice(&(shards_count as u32).to_be_bytes());
             sub_buffer[14..18].copy_from_slice(&(idx as u32).to_be_bytes());
+            sub_buffer[18..22].copy_from_slice(&duration.to_be_bytes());
 
             self.inner.lock().send(&sub_buffer[..packet_length])?;
+            self.last_shard_instant = Some(now);
         }
-
+        self.last_shard_instant = None;
         self.next_packet_index += 1;
 
         self.used_buffers.push(buffer.inner);
@@ -169,11 +181,36 @@ pub struct ReceiverData<H> {
     used_buffer_queue: mpsc::Sender<Vec<u8>>,
     had_packet_loss: bool,
     _phantom: PhantomData<H>,
+
+    jitter_avg_frame:   f32, 
+    frame_span:         f32, 
+    frame_interarrival: f32, 
+    rx_bytes:           u32, 
+    bytes_in_frame:     u32, 
+    bytes_in_frame_app: u32, 
 }
 
 impl<H> ReceiverData<H> {
     pub fn had_packet_loss(&self) -> bool {
         self.had_packet_loss
+    }
+    pub fn get_jitter_avg_frame(&self) ->  f32{
+        self.jitter_avg_frame
+    } 
+    pub fn get_frame_span(&self) ->  f32{
+        self.frame_span
+    }
+    pub fn get_frame_interarrival(&self) ->  f32{
+        self.frame_interarrival
+    }   
+    pub fn get_rx_bytes(&self) -> u32 {
+        self.rx_bytes
+    }
+    pub fn get_bytes_in_frame(&self) -> u32{
+        self.bytes_in_frame
+    }
+    pub fn get_bytes_in_frame_app(&self) -> u32{
+        self.bytes_in_frame_app
     }
 }
 
@@ -202,6 +239,13 @@ struct ReconstructedPacket {
     index: u32,
     buffer: Vec<u8>,
     size: usize, // contains prefix
+
+    jitter_avg_frame:   f32, 
+    frame_span:         f32, 
+    frame_interarrival: f32,   
+    rx_bytes:           u32, 
+    bytes_in_frame:     u32, 
+    bytes_in_frame_app: u32, 
 }
 
 pub struct StreamReceiver<H> {
@@ -209,6 +253,9 @@ pub struct StreamReceiver<H> {
     used_buffer_queue: mpsc::Sender<Vec<u8>>,
     last_packet_index: Option<u32>,
     _phantom: PhantomData<H>,
+
+    frame_interarrival: f32,
+    rx_bytes:           u32, 
 }
 
 fn wrapping_cmp(lhs: u32, rhs: u32) -> Ordering {
@@ -232,6 +279,10 @@ impl<H: DeserializeOwned + Serialize> StreamReceiver<H> {
             .recv_timeout(timeout)
             .handle_try_again()?;
 
+
+        self.frame_interarrival += packet.frame_interarrival;
+        self.rx_bytes += packet.rx_bytes; 
+
         let mut had_packet_loss = false;
 
         if let Some(last_idx) = self.last_packet_index {
@@ -249,14 +300,26 @@ impl<H: DeserializeOwned + Serialize> StreamReceiver<H> {
                 }
             }
         }
-        self.last_packet_index = Some(packet.index);
 
+        let interarrival = self.frame_interarrival;
+        let rx_bytes_val = self.rx_bytes; 
+
+        self.frame_interarrival = 0.0;
+        self.rx_bytes = 0; 
+
+        self.last_packet_index = Some(packet.index);
         Ok(ReceiverData {
             buffer: Some(packet.buffer),
             size: packet.size,
             used_buffer_queue: self.used_buffer_queue.clone(),
             had_packet_loss,
             _phantom: PhantomData,
+            jitter_avg_frame: packet.jitter_avg_frame,
+            frame_span: packet.frame_span,
+            frame_interarrival: interarrival,
+            rx_bytes: rx_bytes_val,
+            bytes_in_frame: packet.bytes_in_frame, 
+            bytes_in_frame_app: packet.bytes_in_frame_app
         })
     }
 }
@@ -299,17 +362,20 @@ impl StreamSocketBuilder {
         max_packet_size: usize,
         timeout: Duration,
     ) -> ConResult<StreamSocket> {
+        let protocol_index: SocketProtocol; 
         let (send_socket, receive_socket): (Box<dyn SocketWriter>, Box<dyn SocketReader>) =
             match self {
                 StreamSocketBuilder::Udp(socket) => {
                     let (send_socket, receive_socket) =
                         udp::connect(&socket, server_ip, port, timeout).to_con()?;
+                        protocol_index = SocketProtocol::Udp;
 
                     (Box::new(send_socket), Box::new(receive_socket))
                 }
                 StreamSocketBuilder::Tcp(listener) => {
                     let (send_socket, receive_socket) =
                         tcp::accept_from_server(&listener, Some(server_ip), timeout)?;
+                        protocol_index = SocketProtocol::Tcp; 
 
                     (Box::new(send_socket), Box::new(receive_socket))
                 }
@@ -323,6 +389,10 @@ impl StreamSocketBuilder {
             receive_socket,
             shard_recv_state: None,
             stream_recv_components: HashMap::new(),
+            map_rx: HashMap::new(), 
+            last_shard_in_frame_instant: Instant::now() , 
+            rx_bytes : 0 , 
+            transport_protocol: protocol_index, 
         })
     }
 
@@ -368,6 +438,10 @@ impl StreamSocketBuilder {
             receive_socket,
             shard_recv_state: None,
             stream_recv_components: HashMap::new(),
+            map_rx: HashMap::new(), 
+            last_shard_in_frame_instant: Instant::now() , 
+            rx_bytes :  0, 
+            transport_protocol: protocol, 
         })
     }
 }
@@ -405,8 +479,20 @@ pub struct StreamSocket {
     receive_socket: Box<dyn SocketReader>,
     shard_recv_state: Option<RecvState>,
     stream_recv_components: HashMap<u16, StreamRecvComponents>,
+
+    map_rx: HashMap<u32, HashMap<usize, ShardMapStats>>,
+    last_shard_in_frame_instant: Instant, 
+    rx_bytes: u32, 
+    transport_protocol: SocketProtocol, 
 }
 
+#[derive(Clone)]
+struct ShardMapStats{
+    tx_duration: f32, 
+    rx_instant: Instant,
+    rx_bytes : u32, 
+    rx_bytes_app: u32, 
+}
 impl StreamSocket {
     pub fn request_stream<T>(&self, stream_id: u16) -> StreamSender<T> {
         StreamSender {
@@ -416,6 +502,7 @@ impl StreamSocket {
             next_packet_index: 0,
             used_buffers: vec![],
             _phantom: PhantomData,
+            last_shard_instant: None, 
         }
     }
 
@@ -454,6 +541,9 @@ impl StreamSocket {
             used_buffer_queue: used_buffer_sender,
             _phantom: PhantomData,
             last_packet_index: None,
+
+            frame_interarrival: 0.,
+            rx_bytes: 0,
         }
     }
 
@@ -475,7 +565,25 @@ impl StreamSocket {
             let packet_index = u32::from_be_bytes(bytes[6..10].try_into().unwrap());
             let shards_count = u32::from_be_bytes(bytes[10..14].try_into().unwrap()) as usize;
             let shard_index = u32::from_be_bytes(bytes[14..18].try_into().unwrap()) as usize;
+            let tx_duration =  f32::from_be_bytes(bytes[18..22].try_into().unwrap());  
 
+
+            if stream_id == VIDEO {
+                let header_bytes_transport: u32 = match self.transport_protocol{
+                    SocketProtocol::Udp => 42,
+                    SocketProtocol::Tcp => 54, 
+                };
+                let packet = ShardMapStats {
+                    tx_duration,
+                    rx_instant: Instant::now(),  
+                    rx_bytes: shard_length as u32 + header_bytes_transport,
+                    rx_bytes_app: (shard_length - SHARD_PREFIX_SIZE) as u32, 
+                }; 
+                let shards_map = self.map_rx.entry(packet_index).or_insert(HashMap::new());
+                shards_map.insert(shard_index , packet);
+
+                self.rx_bytes += shard_length as u32 + header_bytes_transport; 
+            }
             self.shard_recv_state.insert(RecvState {
                 shard_length,
                 stream_id,
@@ -590,8 +698,64 @@ impl StreamSocket {
                 .insert(shard_recv_state_mut.shard_index);
         }
 
+        let mut jitter_avg = 0.0; 
+        let mut frame_span= 0.0;
+        let mut frame_interarrival: f32 = 0.0; 
+        let mut all_bytes_in_frame: u32 = 0; 
+        let mut all_bytes_in_frame_app: u32 = 0; 
+
         // Check if packet is complete and send
         if in_progress_packet.received_shard_indices.len() == shard_recv_state_mut.shards_count {
+
+            if shard_recv_state_mut.stream_id == VIDEO {
+                if let Some(inner_map) = self.map_rx.remove(&shard_recv_state_mut.packet_index){  // pop and remove it 
+                    let values: Vec<&ShardMapStats> = inner_map.values().collect();
+
+                    let min_time = values.iter().map(|shard| shard.rx_instant).min().unwrap(); 
+                    let max_time = values.iter().map(|shard| shard.rx_instant).max().unwrap(); 
+                    all_bytes_in_frame = values.iter().map(|shard| shard.rx_bytes).sum(); 
+                    all_bytes_in_frame_app = values.iter().map(|shard| shard.rx_bytes_app).sum();
+
+                    frame_span = max_time.saturating_duration_since(min_time).as_secs_f32(); 
+                    frame_interarrival = max_time.saturating_duration_since(self.last_shard_in_frame_instant).as_secs_f32(); 
+
+                    self.last_shard_in_frame_instant = max_time; 
+
+                    //jitter: 
+
+                    let mut sorted_keys: Vec<usize> = inner_map.keys().copied().collect();
+                    sorted_keys.sort_unstable_by_key(|&k| Reverse(k));
+
+                    let ordered_values: Vec<&ShardMapStats> = sorted_keys
+                    .iter()
+                    .filter_map(|&key| inner_map.get(&key))
+                    .collect();
+
+                    let mut prev_instant_rx = Instant::now(); 
+                    let mut index = 0; 
+                    let mut delay_gradient: f32 = 0.0; 
+                    let mut time_duration_rx; 
+
+
+                    for shards_stats in ordered_values{
+                        if index == 0{
+                            prev_instant_rx = shards_stats.rx_instant; 
+                        }
+                        else{
+                            time_duration_rx = shards_stats.rx_instant.duration_since(prev_instant_rx); 
+                            delay_gradient += shards_stats.tx_duration - time_duration_rx.as_secs_f32() ; 
+                            prev_instant_rx = shards_stats.rx_instant; 
+                        }
+                        index +=1; 
+                    }
+                    jitter_avg = delay_gradient / shard_recv_state_mut.shards_count as f32; 
+
+                }
+            }
+
+
+
+
             let size = in_progress_packet.buffer_length;
             components
                 .packet_queue
@@ -603,8 +767,15 @@ impl StreamSocket {
                         .unwrap()
                         .buffer,
                     size,
+                    jitter_avg_frame: jitter_avg, 
+                    frame_span: frame_span,
+                    frame_interarrival: frame_interarrival, 
+                    rx_bytes: self.rx_bytes, 
+                    bytes_in_frame: all_bytes_in_frame, 
+                    bytes_in_frame_app: all_bytes_in_frame_app, 
                 })
                 .ok();
+            self.rx_bytes = 0; 
 
             // Keep only shards with later packet index (using wrapping logic)
             while let Some((idx, _)) = components.in_progress_packets.iter().find(|(idx, _)| {
