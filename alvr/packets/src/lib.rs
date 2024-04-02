@@ -216,7 +216,6 @@ pub struct ClientStatistics {
     pub highest_rx_shard_index: i32,
     pub threshold_gcc: f32,
     pub internal_state_gcc: StatesWebrtc, 
-
 }
 
 #[derive(Serialize, Deserialize, Clone, Debug)]
