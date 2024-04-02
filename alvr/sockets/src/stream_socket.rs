@@ -877,7 +877,6 @@ impl StreamSocket {
 
                     let mut prev_instant_rx = Instant::now(); 
                     let mut index = 0; 
-                    let mut delay_gradient: f32 = 0.0; 
                     let mut time_duration_rx; 
 
 

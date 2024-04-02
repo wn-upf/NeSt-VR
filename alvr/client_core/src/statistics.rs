@@ -6,7 +6,7 @@ use std::{
 };
 
 use crate::connection::VideoStatsRx;
-
+#[derive(Clone)]
 struct HistoryFrame {
     input_acquired: Instant,
     video_packet_received: Instant,

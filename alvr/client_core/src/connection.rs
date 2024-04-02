@@ -382,7 +382,7 @@ fn connection_pipeline(
                         videoStats.frames_dropped += 1; 
                     }
                     
-                    if let Some(stats) = *CONTROL_SENDER.lock(){
+                    if let Some(stats) = &mut *STATISTICS_MANAGER.lock(){
                         stats.report_video_packet_dropped(data.get_frame_index());
                     }
                     warn!(
@@ -406,7 +406,7 @@ fn connection_pipeline(
                     sender.send(&ClientControlPacket::RequestIdr).ok();
                 }
                 videoStats.frames_dropped += 1; 
-                if let Some(stats) = *CONTROL_SENDER.lock(){
+                if let Some(stats) = &mut *STATISTICS_MANAGER.lock(){
                     stats.report_video_packet_dropped(data.get_frame_index());
                 }
                 warn!("Dropped video packet {}. Reason: Waiting for IDR frame", data.get_frame_index())
