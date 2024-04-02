@@ -580,7 +580,7 @@ fn connection_pipeline(
                 let spf = video_sender.get_shards_count(); 
 
                 if let Some(stats) = &mut *STATISTICS_MANAGER.lock() {
-                    stats.report_frame_sent( header.timestamp, frame_sent_id, spf);  
+                    stats.report_frame_sent(frame_sent_id, spf);  
                 }
 
             }

@@ -240,6 +240,7 @@ pub struct ReceiverData<H> {
     highest_rx_frame_index: i32, 
     highest_rx_shard_index: i32,
     frames_skipped:         u32, 
+    frame_index:            u32, 
 }
 
 impl<H> ReceiverData<H> {
@@ -282,6 +283,9 @@ impl<H> ReceiverData<H> {
     pub fn get_frames_skipped(&self) -> u32{
         self.frames_skipped
     }
+    pub fn get_frame_index(&self) -> u32{
+        self.frame_index
+    }
 }
 
 impl<H: DeserializeOwned> ReceiverData<H> {
@@ -322,6 +326,7 @@ struct ReconstructedPacket {
     duplicated_shard_counter: u32,
     highest_rx_frame_index: i32, 
     highest_rx_shard_index: i32,
+    frame_index:            u32, 
 }
 
 pub struct StreamReceiver<H> {
@@ -413,6 +418,7 @@ impl<H: DeserializeOwned + Serialize> StreamReceiver<H> {
             highest_rx_frame_index: packet.highest_rx_frame_index, 
             highest_rx_shard_index: packet.highest_rx_shard_index,
             frames_skipped: fl, 
+            frame_index: packet.frame_index, 
         })
     }
 }
@@ -931,6 +937,7 @@ impl StreamSocket {
                     duplicated_shard_counter: self.duplicated_shard_counter,
                     highest_rx_frame_index: self.highest_rx_frame_index, 
                     highest_rx_shard_index: self.highest_rx_shard_index,
+                    frame_index: shard_recv_state_mut.packet_index, 
                 })
                 .ok();
 

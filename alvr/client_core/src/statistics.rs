@@ -19,6 +19,8 @@ pub struct StatisticsManager {
     prev_vsync: Instant,
     total_pipeline_latency_average: SlidingWindowAverage<Duration>,
     steamvr_pipeline_latency: Duration,
+
+    stats_history_buffer: VecDeque<HistoryFrame>, 
 }
 
 impl StatisticsManager {
@@ -38,6 +40,7 @@ impl StatisticsManager {
             steamvr_pipeline_latency: Duration::from_secs_f32(
                 steamvr_pipeline_frames * nominal_server_frame_interval.as_secs_f32(),
             ),
+            stats_history_buffer: VecDeque::new(), 
         }
     }
 
@@ -94,11 +97,12 @@ impl StatisticsManager {
             frame.client_stats.highest_rx_shard_index = video_stats.highest_rx_shard_index; 
             frame.client_stats.frames_skipped = video_stats.frames_skipped; 
             frame.client_stats.frames_dropped = video_stats.frames_dropped;
+            frame.client_stats.frame_index = video_stats.frame_index; 
         }
     }
     pub fn report_frame_decoded(&mut self, target_timestamp: Duration) {
         if let Some(frame) = self
-            .history_buffer
+            .stats_history_buffer
             .iter_mut()
             .find(|frame| frame.client_stats.target_timestamp == target_timestamp)
         {
@@ -109,7 +113,7 @@ impl StatisticsManager {
 
     pub fn report_compositor_start(&mut self, target_timestamp: Duration) {
         if let Some(frame) = self
-            .history_buffer
+            .stats_history_buffer
             .iter_mut()
             .find(|frame| frame.client_stats.target_timestamp == target_timestamp)
         {
@@ -125,7 +129,7 @@ impl StatisticsManager {
         let now = Instant::now();
 
         if let Some(frame) = self
-            .history_buffer
+            .stats_history_buffer
             .iter_mut()
             .find(|frame| frame.client_stats.target_timestamp == target_timestamp)
         {
