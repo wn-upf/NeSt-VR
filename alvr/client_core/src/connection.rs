@@ -45,6 +45,14 @@ pub struct VideoStatsRx{
     pub rx_bytes:           u32, 
     pub bytes_in_frame:     u32, 
     pub bytes_in_frame_app: u32, 
+
+    pub filtered_ow_delay:  f32, 
+    pub rx_shard_counter:   u32, 
+    pub duplicated_shard_counter: u32,
+    pub highest_rx_frame_index: i32, 
+    pub highest_rx_shard_index: i32,
+    pub frames_skipped:              u32, 
+    pub frames_dropped:     u32, 
 }
 
 #[cfg(target_os = "android")]
@@ -288,6 +296,14 @@ fn connection_pipeline(
         rx_bytes:           0, 
         bytes_in_frame:     0, 
         bytes_in_frame_app: 0, 
+
+        filtered_ow_delay:  0.0, 
+        rx_shard_counter:   0, 
+        duplicated_shard_counter: 0,
+        highest_rx_frame_index: 0, 
+        highest_rx_shard_index: 0,
+        frames_skipped:         0, 
+        frames_dropped:         0, 
     }; 
     {
         let config = &mut *DECODER_INIT_CONFIG.lock();
@@ -324,10 +340,19 @@ fn connection_pipeline(
             videoStats.rx_bytes += data.get_rx_bytes(); 
             videoStats.bytes_in_frame = data.get_bytes_in_frame(); 
             videoStats.bytes_in_frame_app = data.get_bytes_in_frame_app();
+            videoStats.filtered_ow_delay = data.get_filtered_ow_delay(); 
+            videoStats.highest_rx_frame_index = data.get_highest_rx_frame_index(); 
+            videoStats.highest_rx_shard_index = data.get_highest_rx_shard_index(); 
+
+
+            videoStats.rx_bytes         += data.get_rx_bytes(); 
+            videoStats.rx_shard_counter += data.get_rx_shard_counter(); 
+            videoStats.duplicated_shard_counter += data.get_duplicated_shard_counter(); 
+            videoStats.frame_interarrival += data.get_frame_interarrival(); 
+            videoStats.frames_skipped += data.get_frames_skipped(); 
 
             if let Some(stats) = &mut *STATISTICS_MANAGER.lock() {
                 stats.report_video_packet_received(header.timestamp);
-                stats.report_video_statistics(header.timestamp, videoStats);
             }
 
             if header.is_idr {
@@ -339,19 +364,32 @@ fn connection_pipeline(
                 }
                 warn!("Network dropped video packet");
             }
-
             if !stream_corrupted || !settings.connection.avoid_video_glitching {
                 if !decoder::push_nal(header.timestamp, nal) {
                     stream_corrupted = true;
                     if let Some(sender) = &mut *CONTROL_SENDER.lock() {
                         sender.send(&ClientControlPacket::RequestIdr).ok();
+                        videoStats.frames_dropped += 1; 
                     }
                     warn!("Dropped video packet. Reason: Decoder saturation")
+                }
+                else{ //case where frame is decoded correctly
+                    if let Some(stats) = &mut *STATISTICS_MANAGER.lock() {
+                        stats.report_video_statistics(header.timestamp, videoStats);
+                    }
+                    videoStats.frame_interarrival = 0.0; 
+                    videoStats.rx_bytes = 0; 
+                    videoStats.duplicated_shard_counter = 0;
+                    videoStats.rx_shard_counter = 0; 
+                    videoStats.frames_skipped = 0; 
+                    videoStats.frames_dropped = 0; 
+                    
                 }
             } else {
                 if let Some(sender) = &mut *CONTROL_SENDER.lock() {
                     sender.send(&ClientControlPacket::RequestIdr).ok();
                 }
+                videoStats.frames_dropped += 1; 
                 warn!("Dropped video packet. Reason: Waiting for IDR frame")
             }
         }

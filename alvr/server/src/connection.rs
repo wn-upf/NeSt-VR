@@ -575,6 +575,14 @@ fn connection_pipeline(
                     .get_range_mut(0, payload.len())
                     .copy_from_slice(&payload);
                 video_sender.send(buffer).ok();
+                
+                let frame_sent_id = video_sender.get_last_packet_id();
+                let spf = video_sender.get_shards_count(); 
+
+                if let Some(stats) = &mut *STATISTICS_MANAGER.lock() {
+                    stats.report_frame_sent( header.timestamp, frame_sent_id, spf);  
+                }
+
             }
         }
     });
@@ -1274,7 +1282,7 @@ pub extern "C" fn send_video(timestamp_ns: u64, buffer_ptr: *mut u8, len: i32, i
 
         if let Some(stats) = &mut *STATISTICS_MANAGER.lock() {
             let encoder_latency =
-                stats.report_frame_encoded(Duration::from_nanos(timestamp_ns), buffer_size);
+                stats.report_frame_encoded(Duration::from_nanos(timestamp_ns), buffer_size, is_idr);
 
             BITRATE_MANAGER
                 .lock()

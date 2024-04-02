@@ -85,7 +85,15 @@ impl StatisticsManager {
             frame.client_stats.frame_interarrival = video_stats.frame_interarrival;
             frame.client_stats.rx_bytes = video_stats.rx_bytes;      
             frame.client_stats.bytes_in_frame = video_stats.bytes_in_frame;  
-            frame.client_stats.bytes_in_frame_app = video_stats.bytes_in_frame_app; 
+            frame.client_stats.bytes_in_frame_app = video_stats.bytes_in_frame_app;
+
+            frame.client_stats.filtered_ow_delay = video_stats.filtered_ow_delay; 
+            frame.client_stats.rx_shard_counter = video_stats.rx_shard_counter; 
+            frame.client_stats.duplicated_shard_counter = video_stats.duplicated_shard_counter; 
+            frame.client_stats.highest_rx_frame_index = video_stats.highest_rx_frame_index; 
+            frame.client_stats.highest_rx_shard_index = video_stats.highest_rx_shard_index; 
+            frame.client_stats.frames_skipped = video_stats.frames_skipped; 
+            frame.client_stats.frames_dropped = video_stats.frames_dropped;
         }
     }
     pub fn report_frame_decoded(&mut self, target_timestamp: Duration) {

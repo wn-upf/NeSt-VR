@@ -36,6 +36,40 @@ use std::{
     time::{Duration, Instant},
 };
 
+const Q_KALMAN: f32 = 10E-3; 
+
+impl Default for KalmanFilter{
+    fn default() -> Self {
+        KalmanFilter {
+            ow_delay: 0.0,
+            m_current: 0.0,
+            p_current: 0.0,
+            noise_prev: 0.0,
+            residual_z: 0.0,
+            noise_estimation: 0.0,
+            m_prev: 0.0,
+            p_prev: 0.0,
+            k_gain: 0.0,
+            measured_delay: 0.0,
+            abs_m: 0.0,
+        }
+    }
+}
+
+pub struct KalmanFilter{
+    ow_delay: f32, 
+    m_current: f32, 
+    p_current: f32, 
+    noise_prev: f32,
+    residual_z: f32, 
+    noise_estimation: f32,
+    m_prev: f32, 
+    p_prev :f32,
+    k_gain: f32,
+    measured_delay: f32, 
+    abs_m: f32, 
+}
+
 const SHARD_PREFIX_SIZE: usize = mem::size_of::<u32>() // packet length - field itself (4 bytes)
     + mem::size_of::<u16>() // stream ID
     + mem::size_of::<u32>() // packet index
@@ -100,9 +134,19 @@ pub struct StreamSender<H> {
     _phantom: PhantomData<H>,
 
     last_shard_instant: Option<Instant>, 
+    shards_count: usize, 
 }
 
 impl<H> StreamSender<H> {
+
+    pub fn get_shards_count(&self)  -> usize {
+        self.shards_count
+    }
+    pub fn get_last_packet_id(&self) -> u32 {
+        self.next_packet_index - 1 
+    }
+
+
     /// Shard and send a buffer with zero copies and zero allocations.
     /// The prefix of each shard is written over the previously sent shard to avoid reallocations.
     pub fn send(&mut self, mut buffer: Buffer<H>) -> Result<()> {
@@ -139,6 +183,7 @@ impl<H> StreamSender<H> {
             self.inner.lock().send(&sub_buffer[..packet_length])?;
             self.last_shard_instant = Some(now);
         }
+        self.shards_count = shards_count;
         self.last_shard_instant = None;
         self.next_packet_index += 1;
 
@@ -188,6 +233,13 @@ pub struct ReceiverData<H> {
     rx_bytes:           u32, 
     bytes_in_frame:     u32, 
     bytes_in_frame_app: u32, 
+
+    filtered_ow_delay:  f32, 
+    rx_shard_counter:   u32, 
+    duplicated_shard_counter: u32,
+    highest_rx_frame_index: i32, 
+    highest_rx_shard_index: i32,
+    frames_skipped:         u32, 
 }
 
 impl<H> ReceiverData<H> {
@@ -211,6 +263,24 @@ impl<H> ReceiverData<H> {
     }
     pub fn get_bytes_in_frame_app(&self) -> u32{
         self.bytes_in_frame_app
+    }
+    pub fn get_filtered_ow_delay(&self) -> f32{
+        self.filtered_ow_delay
+    }
+    pub fn get_rx_shard_counter(&self) -> u32{
+        self.rx_shard_counter
+    }
+    pub fn get_duplicated_shard_counter(&self) -> u32{
+        self.duplicated_shard_counter
+    }
+    pub fn get_highest_rx_frame_index(&self) -> i32{
+        self.highest_rx_frame_index
+    }
+    pub fn get_highest_rx_shard_index(&self) -> i32{
+        self.highest_rx_shard_index
+    }
+    pub fn get_frames_skipped(&self) -> u32{
+        self.frames_skipped
     }
 }
 
@@ -246,6 +316,12 @@ struct ReconstructedPacket {
     rx_bytes:           u32, 
     bytes_in_frame:     u32, 
     bytes_in_frame_app: u32, 
+
+    filtered_ow_delay:  f32, 
+    rx_shard_counter:   u32, 
+    duplicated_shard_counter: u32,
+    highest_rx_frame_index: i32, 
+    highest_rx_shard_index: i32,
 }
 
 pub struct StreamReceiver<H> {
@@ -256,6 +332,8 @@ pub struct StreamReceiver<H> {
 
     frame_interarrival: f32,
     rx_bytes:           u32, 
+    rx_shard_counter: u32, 
+    duplicated_shard_counter: u32,
 }
 
 fn wrapping_cmp(lhs: u32, rhs: u32) -> Ordering {
@@ -283,7 +361,10 @@ impl<H: DeserializeOwned + Serialize> StreamReceiver<H> {
         self.frame_interarrival += packet.frame_interarrival;
         self.rx_bytes += packet.rx_bytes; 
 
+        self.duplicated_shard_counter += packet.duplicated_shard_counter; 
+        self.rx_shard_counter +=        packet.rx_shard_counter; 
         let mut had_packet_loss = false;
+        let mut fl: u32 = 0; 
 
         if let Some(last_idx) = self.last_packet_index {
             // Use wrapping arithmetics
@@ -291,6 +372,7 @@ impl<H: DeserializeOwned + Serialize> StreamReceiver<H> {
                 Ordering::Equal => (),
                 Ordering::Greater => {
                     // Skipped some indices
+                    fl = packet.index - last_idx.wrapping_add(1); 
                     had_packet_loss = true
                 }
                 Ordering::Less => {
@@ -302,10 +384,14 @@ impl<H: DeserializeOwned + Serialize> StreamReceiver<H> {
         }
 
         let interarrival = self.frame_interarrival;
-        let rx_bytes_val = self.rx_bytes; 
+        let rx_bytes_val = self.rx_bytes;
+        let rx_counter = self.rx_shard_counter; 
+        let duplicated_counter = self.duplicated_shard_counter;  
 
         self.frame_interarrival = 0.0;
         self.rx_bytes = 0; 
+        self.rx_shard_counter = 0;
+        self.duplicated_shard_counter = 0; 
 
         self.last_packet_index = Some(packet.index);
         Ok(ReceiverData {
@@ -319,7 +405,14 @@ impl<H: DeserializeOwned + Serialize> StreamReceiver<H> {
             frame_interarrival: interarrival,
             rx_bytes: rx_bytes_val,
             bytes_in_frame: packet.bytes_in_frame, 
-            bytes_in_frame_app: packet.bytes_in_frame_app
+            bytes_in_frame_app: packet.bytes_in_frame_app,
+
+            filtered_ow_delay:  packet.filtered_ow_delay, 
+            rx_shard_counter:   rx_counter, 
+            duplicated_shard_counter: duplicated_counter,
+            highest_rx_frame_index: packet.highest_rx_frame_index, 
+            highest_rx_shard_index: packet.highest_rx_shard_index,
+            frames_skipped: fl, 
         })
     }
 }
@@ -393,6 +486,11 @@ impl StreamSocketBuilder {
             last_shard_in_frame_instant: Instant::now() , 
             rx_bytes : 0 , 
             transport_protocol: protocol_index, 
+            kalman: KalmanFilter::default(), 
+            rx_shard_counter: 0, 
+            duplicated_shard_counter: 0,
+            highest_rx_frame_index: -1, 
+            highest_rx_shard_index: -1,
         })
     }
 
@@ -442,6 +540,11 @@ impl StreamSocketBuilder {
             last_shard_in_frame_instant: Instant::now() , 
             rx_bytes :  0, 
             transport_protocol: protocol, 
+            kalman: KalmanFilter::default(), 
+            rx_shard_counter: 0, 
+            duplicated_shard_counter: 0,
+            highest_rx_frame_index: -1, 
+            highest_rx_shard_index: -1,
         })
     }
 }
@@ -484,6 +587,12 @@ pub struct StreamSocket {
     last_shard_in_frame_instant: Instant, 
     rx_bytes: u32, 
     transport_protocol: SocketProtocol, 
+    
+    kalman: KalmanFilter,
+    rx_shard_counter: u32, 
+    duplicated_shard_counter: u32, 
+    highest_rx_shard_index: i32, 
+    highest_rx_frame_index: i32, 
 }
 
 #[derive(Clone)]
@@ -503,6 +612,7 @@ impl StreamSocket {
             used_buffers: vec![],
             _phantom: PhantomData,
             last_shard_instant: None, 
+            shards_count: 0, 
         }
     }
 
@@ -544,6 +654,8 @@ impl StreamSocket {
 
             frame_interarrival: 0.,
             rx_bytes: 0,
+            duplicated_shard_counter: 0,
+            rx_shard_counter: 0, 
         }
     }
 
@@ -569,6 +681,17 @@ impl StreamSocket {
 
 
             if stream_id == VIDEO {
+
+                if self.highest_rx_frame_index == packet_index as i32 {
+                    if self.highest_rx_shard_index < shard_index as i32{
+                        self.highest_rx_shard_index = shard_index as i32; 
+                    }
+                }
+                else if self.highest_rx_frame_index < packet_index as i32{
+                    self.highest_rx_frame_index = packet_index as i32; 
+                    self.highest_rx_shard_index = shard_index as i32; 
+                }
+
                 let header_bytes_transport: u32 = match self.transport_protocol{
                     SocketProtocol::Udp => 42,
                     SocketProtocol::Tcp => 54, 
@@ -620,19 +743,34 @@ impl StreamSocket {
             // has been dropped by the network.
             let idx = *components.in_progress_packets.iter().next()?.0;
             Some(components.in_progress_packets.remove(&idx).unwrap().buffer)
-        }) {
-            // NB: Can't use entry pattern because we want to allow bailing out on the line above
-            components.in_progress_packets.insert(
-                shard_recv_state_mut.packet_index,
-                InProgressPacket {
-                    buffer,
-                    buffer_length: 0,
-                    // todo: find a way to skipping this allocation
-                    received_shard_indices: HashSet::with_capacity(
-                        shard_recv_state_mut.shards_count,
-                    ),
-                },
-            );
+        }) { 
+
+            if let Some(rx_shards_current)  = components.in_progress_packets.get_mut(&shard_recv_state_mut.packet_index){
+                
+                if !(rx_shards_current.received_shard_indices.contains(&shard_recv_state_mut.shard_index)){
+                    if shard_recv_state_mut.stream_id == VIDEO
+                    {   
+                        self.rx_shard_counter += 1; 
+                    }
+                // NB: Can't use entry pattern because we want to allow bailing out on the line above
+                components.in_progress_packets.insert(
+                    shard_recv_state_mut.packet_index,
+                    InProgressPacket {
+                        buffer,
+                        buffer_length: 0,
+                        // todo: find a way to skipping this allocation
+                        received_shard_indices: HashSet::with_capacity(
+                            shard_recv_state_mut.shards_count,
+                        ),
+                    },
+                    );
+                }
+                else{
+                    if shard_recv_state_mut.stream_id == VIDEO{
+                        self.duplicated_shard_counter += 1; 
+                    }
+                }
+            }
             components
                 .in_progress_packets
                 .get_mut(&shard_recv_state_mut.packet_index)
@@ -743,12 +881,27 @@ impl StreamSocket {
                         }
                         else{
                             time_duration_rx = shards_stats.rx_instant.duration_since(prev_instant_rx); 
-                            delay_gradient += shards_stats.tx_duration - time_duration_rx.as_secs_f32() ; 
+                            // delay_gradient += shards_stats.tx_duration - time_duration_rx.as_secs_f32() ; 
+
+                            self.kalman.ow_delay = shards_stats.tx_duration - time_duration_rx.as_secs_f32(); 
+                            self.kalman.k_gain = (self.kalman.p_prev + Q_KALMAN) / (self.kalman.p_prev + Q_KALMAN + self.kalman.noise_estimation); 
+                            self.kalman.m_current = (1.0 - self.kalman.k_gain) * self.kalman.m_prev + self.kalman.k_gain * self.kalman.ow_delay; 
+
+                            self.kalman.residual_z = self.kalman.ow_delay - self.kalman.m_prev; 
+                            self.kalman.noise_estimation = (0.95 * self.kalman.noise_prev) + self.kalman.residual_z.powf(2.0)*0.05; 
+                            self.kalman.p_current = (1.0 - self.kalman.k_gain) * (self.kalman.p_prev + Q_KALMAN);  
+                            self.kalman.abs_m = self.kalman.m_current.abs(); // absolute value in rust? ; 
+
+                            self.kalman.p_prev = self.kalman.p_current; 
+                            self.kalman.m_prev = self.kalman.m_current; 
+                            self.kalman.noise_prev = self.kalman.noise_estimation; 
+
+                            self.kalman.measured_delay += self.kalman.m_current; 
                             prev_instant_rx = shards_stats.rx_instant; 
                         }
                         index +=1; 
                     }
-                    jitter_avg = delay_gradient / shard_recv_state_mut.shards_count as f32; 
+                    jitter_avg = self.kalman.ow_delay / shard_recv_state_mut.shards_count as f32; 
 
                 }
             }
@@ -773,9 +926,19 @@ impl StreamSocket {
                     rx_bytes: self.rx_bytes, 
                     bytes_in_frame: all_bytes_in_frame, 
                     bytes_in_frame_app: all_bytes_in_frame_app, 
+                    filtered_ow_delay: self.kalman.m_current, 
+                    rx_shard_counter: self.rx_shard_counter, 
+                    duplicated_shard_counter: self.duplicated_shard_counter,
+                    highest_rx_frame_index: self.highest_rx_frame_index, 
+                    highest_rx_shard_index: self.highest_rx_shard_index,
                 })
                 .ok();
-            self.rx_bytes = 0; 
+
+            if shard_recv_state_mut.stream_id == VIDEO {
+                self.rx_bytes = 0; 
+                self.rx_shard_counter = 0;
+                self.duplicated_shard_counter = 0;
+            }
 
             // Keep only shards with later packet index (using wrapping logic)
             while let Some((idx, _)) = components.in_progress_packets.iter().find(|(idx, _)| {
