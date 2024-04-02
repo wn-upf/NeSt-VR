@@ -1,4 +1,4 @@
-use alvr_common::{info, DeviceMotion, LogEntry, Pose};
+use alvr_common::{info, DeviceMotion, LogEntry, Pose, StatesWebrtc};
 use alvr_packets::{AudioDevicesList, ButtonValue};
 use alvr_session::SessionConfig;
 use serde::{Deserialize, Serialize};
@@ -68,6 +68,9 @@ pub struct GraphStatistics {
 
     pub shards_lost: usize,
     pub shards_duplicated: u32,
+
+    pub threshold_gcc: f32,
+    pub internal_state_gcc: StatesWebrtc, 
 }
 
 #[derive(Serialize, Deserialize, Clone, Debug)]

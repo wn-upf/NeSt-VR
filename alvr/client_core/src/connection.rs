@@ -11,6 +11,7 @@ use crate::{
 };
 use alvr_audio::AudioDevice;
 use alvr_common::{
+    StatesWebrtc, 
     debug, error,
     glam::UVec2,
     info,
@@ -59,6 +60,8 @@ pub struct VideoStatsRx {
 
     pub highest_rx_frame_index: i32,
     pub highest_rx_shard_index: i32,
+    pub threshold_gcc: f32, 
+    pub internal_state_gcc: StatesWebrtc, 
 }
 #[cfg(target_os = "android")]
 use crate::audio;
@@ -315,6 +318,8 @@ fn connection_pipeline(
 
         highest_rx_frame_index: 0,
         highest_rx_shard_index: 0,
+        internal_state_gcc: StatesWebrtc::NORMAL, 
+        threshold_gcc: 0.0, 
     };
     {
         let config = &mut *DECODER_INIT_CONFIG.lock();
@@ -360,6 +365,10 @@ fn connection_pipeline(
             videoStats.frames_skipped += data.get_frames_skipped();
             videoStats.rx_shard_counter += data.get_rx_shard_counter();
             videoStats.duplicated_shard_counter += data.get_duplicated_shard_counter();
+
+            
+            videoStats.internal_state_gcc = data.get_gcc_state();
+            videoStats.threshold_gcc = data.get_adaptive_threshold(); 
 
             if let Some(stats) = &mut *STATISTICS_MANAGER.lock() {
                 stats.report_video_packet_received(header.timestamp);

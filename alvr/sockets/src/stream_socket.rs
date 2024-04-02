@@ -22,7 +22,7 @@ use core::cmp::Reverse;
 
 use crate::backend::{tcp, udp, SocketReader, SocketWriter};
 use alvr_common::{
-    anyhow::Result, debug, parking_lot::Mutex, AnyhowToCon, ConResult, HandleTryAgain, ToCon,
+    anyhow::Result, debug, parking_lot::Mutex, AnyhowToCon, ConResult, HandleTryAgain, ToCon, StatesWebrtc, 
 };
 use alvr_session::{DscpTos, SocketBufferSize, SocketProtocol};
 use serde::{de::DeserializeOwned, Serialize};
@@ -37,6 +37,29 @@ use std::{
 };
 
 const Q_KALMAN: f32 = 10E-3; 
+pub struct KalmanFilter{
+    ow_delay: f32, 
+    m_current: f32, 
+    p_current: f32, 
+    noise_prev: f32,
+    residual_z: f32, 
+    noise_estimation: f32,
+    m_prev: f32, 
+    p_prev :f32,
+    k_gain: f32,
+    measured_delay: f32, 
+    abs_m: f32, 
+
+    adaptive_threshold: f32,
+    adaptive_threshold_prev: f32,
+
+    k_threshold_u : f32,
+    k_threshold_d: f32, 
+
+    state: StatesWebrtc, 
+    last_not_overuse_instant: Instant, 
+}
+
 
 impl Default for KalmanFilter{
     fn default() -> Self {
@@ -52,23 +75,50 @@ impl Default for KalmanFilter{
             k_gain: 0.0,
             measured_delay: 0.0,
             abs_m: 0.0,
+            adaptive_threshold: 0.0,
+            adaptive_threshold_prev: 0.0, 
+
+            k_threshold_u : 0.01,
+            k_threshold_d: 0.00018, 
+
+            state: StatesWebrtc::NORMAL, 
+            last_not_overuse_instant: Instant::now(), 
         }
     }
 }
 
-pub struct KalmanFilter{
-    ow_delay: f32, 
-    m_current: f32, 
-    p_current: f32, 
-    noise_prev: f32,
-    residual_z: f32, 
-    noise_estimation: f32,
-    m_prev: f32, 
-    p_prev :f32,
-    k_gain: f32,
-    measured_delay: f32, 
-    abs_m: f32, 
+
+impl KalmanFilter{
+    fn k_threshold(&self) -> f32 {
+        if f32::abs(self.m_current) < self.adaptive_threshold_prev{
+            self.k_threshold_d
+        }
+        else{
+            self.k_threshold_u
+        }
+    }
+    fn state_gcc(&mut self){
+        if self.m_current > self.adaptive_threshold{
+
+            let time_since_not_overuse = Instant::now().duration_since(self.last_not_overuse_instant);
+
+            if time_since_not_overuse > Duration::from_millis(100){
+                self.state = StatesWebrtc::OVERUSE; 
+            }
+            }
+
+        else if self.m_current < (-self.adaptive_threshold) {
+            self.state = StatesWebrtc::UNDERUSE; 
+            self.last_not_overuse_instant = Instant::now()
+
+        }
+        else if self.m_current >= -self.adaptive_threshold && self.m_current <= self.adaptive_threshold{
+            self.state = StatesWebrtc::NORMAL; 
+            self.last_not_overuse_instant = Instant::now()
+        }
+    }
 }
+
 
 const SHARD_PREFIX_SIZE: usize = mem::size_of::<u32>() // packet length - field itself (4 bytes)
     + mem::size_of::<u16>() // stream ID
@@ -154,10 +204,19 @@ impl<H> StreamSender<H> {
         let actual_buffer_size = buffer.hidden_offset + buffer.length;
         let data_size = actual_buffer_size - SHARD_PREFIX_SIZE;
         let shards_count = (data_size as f32 / max_shard_data_size as f32).ceil() as usize;
-        let mut duration: f32 = Duration::ZERO.as_secs_f32();
+        let mut duration: f32 = 0.0;
+
+        if let Some(shard_instant) = self.last_shard_instant{
+            duration = Instant::now().duration_since(shard_instant).as_secs_f32(); // make duration be the one since first shard of previous frame
+        }
+
         for idx in 0..shards_count {
             // this overlaps with the previous shard, this is intended behavior and allows to
             // reduce allocations
+            
+            if idx == 0 {
+                self.last_shard_instant = Some(Instant::now());
+            }
             let packet_start_position = idx * max_shard_data_size;
             let sub_buffer = &mut buffer.inner[packet_start_position..];
 
@@ -166,10 +225,7 @@ impl<H> StreamSender<H> {
                 self.max_packet_size,
                 actual_buffer_size - packet_start_position,
             );
-            let now = Instant::now();
-            if let Some(shard_instant) = self.last_shard_instant{
-                duration = now.duration_since(shard_instant).as_secs_f32(); 
-            }
+
             // todo: switch to little endian
             // todo: do not remove sizeof<u32> for packet length
             sub_buffer[0..4]
@@ -181,10 +237,8 @@ impl<H> StreamSender<H> {
             sub_buffer[18..22].copy_from_slice(&duration.to_be_bytes());
 
             self.inner.lock().send(&sub_buffer[..packet_length])?;
-            self.last_shard_instant = Some(now);
         }
         self.shards_count = shards_count;
-        self.last_shard_instant = None;
         self.next_packet_index += 1;
 
         self.used_buffers.push(buffer.inner);
@@ -241,6 +295,9 @@ pub struct ReceiverData<H> {
     highest_rx_shard_index: i32,
     frames_skipped:         u32, 
     frame_index:            u32, 
+
+    threshold_gcc: f32, 
+    internal_state_gcc: StatesWebrtc, 
 }
 
 impl<H> ReceiverData<H> {
@@ -286,6 +343,12 @@ impl<H> ReceiverData<H> {
     pub fn get_frame_index(&self) -> u32{
         self.frame_index
     }
+    pub fn get_gcc_state(&self) -> StatesWebrtc {
+        self.internal_state_gcc
+    }
+    pub fn get_adaptive_threshold(&self) -> f32 {
+        self.threshold_gcc
+    }
 }
 
 impl<H: DeserializeOwned> ReceiverData<H> {
@@ -327,6 +390,9 @@ struct ReconstructedPacket {
     highest_rx_frame_index: i32, 
     highest_rx_shard_index: i32,
     frame_index:            u32, 
+
+    threshold_gcc: f32, 
+    internal_state_gcc: StatesWebrtc, 
 }
 
 pub struct StreamReceiver<H> {
@@ -419,6 +485,9 @@ impl<H: DeserializeOwned + Serialize> StreamReceiver<H> {
             highest_rx_shard_index: packet.highest_rx_shard_index,
             frames_skipped: fl, 
             frame_index: packet.frame_index, 
+
+            threshold_gcc: packet.threshold_gcc,
+            internal_state_gcc: packet.internal_state_gcc, 
         })
     }
 }
@@ -877,42 +946,46 @@ impl StreamSocket {
 
                     let mut prev_instant_rx = Instant::now(); 
                     let mut index = 0; 
-                    let mut time_duration_rx; 
+                    let mut time_duration_rx:f32;
+                    let mut total_duration_tx:f32;
 
+                    total_duration_tx = ordered_values.first().unwrap().tx_duration; 
+                    time_duration_rx = frame_interarrival; 
 
-                    for shards_stats in ordered_values{
-                        if index == 0{
-                            prev_instant_rx = shards_stats.rx_instant; 
-                        }
-                        else{
-                            time_duration_rx = shards_stats.rx_instant.duration_since(prev_instant_rx); 
-                            // delay_gradient += shards_stats.tx_duration - time_duration_rx.as_secs_f32() ; 
+                    // now that we have total tx_duration and rx_duration for whole frame, we compute the one way delay gradient (once)
+                    self.kalman.ow_delay =
+                    total_duration_tx - time_duration_rx; 
 
-                            self.kalman.ow_delay = shards_stats.tx_duration - time_duration_rx.as_secs_f32(); 
-                            self.kalman.k_gain = (self.kalman.p_prev + Q_KALMAN) / (self.kalman.p_prev + Q_KALMAN + self.kalman.noise_estimation); 
-                            self.kalman.m_current = (1.0 - self.kalman.k_gain) * self.kalman.m_prev + self.kalman.k_gain * self.kalman.ow_delay; 
+                    self.kalman.k_gain = (self.kalman.p_prev + Q_KALMAN)
+                        / (self.kalman.p_prev
+                            + Q_KALMAN
+                            + self.kalman.noise_estimation);
 
-                            self.kalman.residual_z = self.kalman.ow_delay - self.kalman.m_prev; 
-                            self.kalman.noise_estimation = (0.95 * self.kalman.noise_prev) + self.kalman.residual_z.powf(2.0)*0.05; 
-                            self.kalman.p_current = (1.0 - self.kalman.k_gain) * (self.kalman.p_prev + Q_KALMAN);  
-                            self.kalman.abs_m = self.kalman.m_current.abs(); // absolute value in rust? ; 
+                    self.kalman.m_current = (1.0 - self.kalman.k_gain)
+                        * self.kalman.m_prev
+                        + self.kalman.k_gain * self.kalman.ow_delay;
 
-                            self.kalman.p_prev = self.kalman.p_current; 
-                            self.kalman.m_prev = self.kalman.m_current; 
-                            self.kalman.noise_prev = self.kalman.noise_estimation; 
+                    self.kalman.residual_z = self.kalman.ow_delay - self.kalman.m_prev;
+                    self.kalman.noise_estimation = (0.95 * self.kalman.noise_prev)
+                        + self.kalman.residual_z.powf(2.0) * 0.05;
+                    self.kalman.p_current =
+                        (1.0 - self.kalman.k_gain) * (self.kalman.p_prev + Q_KALMAN);
+                    self.kalman.abs_m = self.kalman.m_current.abs(); // absolute value in rust? ;
 
-                            self.kalman.measured_delay += self.kalman.m_current; 
-                            prev_instant_rx = shards_stats.rx_instant; 
-                        }
-                        index +=1; 
+                    self.kalman.p_prev = self.kalman.p_current;
+                    self.kalman.m_prev = self.kalman.m_current;
+                    self.kalman.noise_prev = self.kalman.noise_estimation;
+
+                    self.kalman.measured_delay += self.kalman.m_current;
+
+                    self.kalman.adaptive_threshold = self.kalman.adaptive_threshold_prev + time_duration_rx * self.kalman.k_threshold() * (f32::abs(self.kalman.m_current) - self.kalman.adaptive_threshold_prev);
+
+                    prev_instant_rx =  ordered_values.first().unwrap().rx_instant;
+                    self.kalman.adaptive_threshold_prev = self.kalman.adaptive_threshold; 
+
+                    self.kalman.state_gcc(); // change state of internal state machine. TODO: Add Delay-based controller logic
                     }
-                    jitter_avg = self.kalman.ow_delay / shard_recv_state_mut.shards_count as f32; 
-
                 }
-            }
-
-
-
 
             let size = in_progress_packet.buffer_length;
             components
@@ -937,6 +1010,8 @@ impl StreamSocket {
                     highest_rx_frame_index: self.highest_rx_frame_index, 
                     highest_rx_shard_index: self.highest_rx_shard_index,
                     frame_index: shard_recv_state_mut.packet_index, 
+                    threshold_gcc: self.kalman.adaptive_threshold, 
+                    internal_state_gcc: self.kalman.state, 
                 })
                 .ok();
 
