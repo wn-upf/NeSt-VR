@@ -298,6 +298,35 @@ pub enum BitrateMode {
         #[schema(flag = "real-time")]
         decoder_latency_limiter: Switch<DecoderLatencyLimiter>,
     },
+    #[schema(collapsible)]
+    SimpleHeuristic {
+        #[schema(strings(display_name = "Maximum bitrate"))]
+        #[schema(flag = "real-time")]
+        #[schema(gui(slider(min = 1.0, max = 1000.0, logarithmic)))]
+        max_bitrate_mbps: Switch<f32>,
+        #[schema(strings(display_name = "Minimum bitrate"))]
+        #[schema(flag = "real-time")]
+        #[schema(gui(slider(min = 1.0, max = 100.0, logarithmic)))]
+        min_bitrate_mbps: Switch<f32>,
+        #[schema(strings(display_name = "Steps of heuristic in mbps"))]
+        #[schema(flag = "real-time")]
+        #[schema(gui(slider(min = 1.0, max = 100.0, logarithmic)))]
+        steps_mbps: Switch<f32>, 
+
+        #[schema(strings(display_name = "Steps of heuristic in mbps"))]
+        #[schema(flag = "real-time")]
+        #[schema(gui(slider(min = 0.0, max = 0.01, logarithmic)))]
+        threshold_jitter: Switch<f32>,
+
+        // #[schema(flag = "real-time")]
+        // encoder_latency_limiter: Switch<EncoderLatencyLimiter>,
+
+        // #[schema(strings(
+        //     help = "Currently there is a bug where the decoder latency keeps rising when above a certain bitrate"
+        // ))]
+        // #[schema(flag = "real-time")]
+        // decoder_latency_limiter: Switch<DecoderLatencyLimiter>,
+    },
 }
 
 #[derive(SettingsSchema, Serialize, Deserialize, Clone, PartialEq)]
@@ -1197,6 +1226,26 @@ pub fn session_settings_default() -> SettingsDefault {
                             },
                         },
                     },
+                    SimpleHeuristic: BitrateModeSimpleHeuristicDefault {
+                        gui_collapsed: false,
+                        max_bitrate_mbps: SwitchDefault {
+                            enabled: true,
+                            content: 100.0,
+                        },
+                        min_bitrate_mbps: SwitchDefault {
+                            enabled: true,
+                            content: 30.0,
+                        },
+                        
+                        steps_mbps: SwitchDefault{
+                            enabled: true,
+                            content: 10.0, 
+                        },
+                        threshold_jitter: SwitchDefault{
+                            enabled: true,
+                            content: 1E-4, 
+                        },
+                    }, 
                     variant: BitrateModeDefaultVariant::ConstantMbps,
                 },
                 adapt_to_framerate: SwitchDefault {

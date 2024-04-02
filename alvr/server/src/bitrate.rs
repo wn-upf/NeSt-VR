@@ -1,4 +1,4 @@
-use crate::FfiDynamicEncoderParams;
+use crate::{bitrate, FfiDynamicEncoderParams};
 use alvr_common::SlidingWindowAverage;
 use alvr_events::NominalBitrateStats;
 use alvr_session::{
@@ -27,6 +27,9 @@ pub struct BitrateManager {
     previous_config: Option<BitrateConfig>,
     update_needed: bool,
     last_target_bitrate: f32, 
+    last_jitter: f32, //added for heuristic, needs to be reported from connection: TODO
+    lost_frames: SlidingWindowAverage<f32>,  //needs to be f32 to retrieve average frame loss as percentage
+    lost_shards: SlidingWindowAverage<f32>, 
 }
 
 impl BitrateManager {
@@ -54,6 +57,9 @@ impl BitrateManager {
             previous_config: None,
             update_needed: true,
             last_target_bitrate: 30_000_000.0, 
+            last_jitter: 0.0001, 
+            lost_frames: SlidingWindowAverage::new(0.0, max_history_size),
+            lost_shards: SlidingWindowAverage::new(30_000_000.0, max_history_size), 
         }
     }
 
@@ -79,6 +85,14 @@ impl BitrateManager {
                 self.update_needed = true;
             }
         }
+        else{
+            //handle the case where setting is not on, framerate can still be useful
+            // to keep track of FPS for heuristic, although not doing the update_needed part
+            let interval_ratio =
+                interval.as_secs_f32() / self.frame_interval_average.get_average().as_secs_f32();
+
+            self.frame_interval_average.submit_sample(interval);       
+        }   
     }
 
     pub fn report_frame_encoded(
@@ -179,13 +193,78 @@ impl BitrateManager {
 
         let bitrate_bps = match &config.mode {
             BitrateMode::ConstantMbps(bitrate_mbps) => *bitrate_mbps as f32 * 1e6,
+            BitrateMode::SimpleHeuristic{
+                max_bitrate_mbps,
+                min_bitrate_mbps,
+                steps_mbps, 
+                threshold_jitter, 
+            } => {
+                fn minmax_bitrate(bitrate_bps: f32, max_bitrate_mbps: &Switch<f32>, min_bitrate_mbps: &Switch<f32>) -> f32 {    
+                    // local function to just minmax after every change from heuristic to avoid blot code
+                    let mut bitrate = bitrate_bps;
+                    if let Switch::Enabled(max) = max_bitrate_mbps {
+                        let max = *max as f32 * 1e6;
+                        bitrate = f32::min(bitrate, max);
+                    }
+                    if let Switch::Enabled(min) = min_bitrate_mbps {
+                        let min = *min as f32 * 1e6;
+                        bitrate = f32::max(bitrate, min);
+                    }
+                    bitrate
+                }
+
+                let initial_bitrate = self.last_target_bitrate; 
+                let mut bitrate_bps: f32 = initial_bitrate; 
+                let frame_loss_avg = self.lost_frames.get_average(); 
+                
+                if let Switch::Enabled(threshold) = threshold_jitter{
+                    if let Switch::Enabled(steps) = steps_mbps{
+                        
+                        let frame_interval = self.frame_interval_average.get_average();
+                        let framerate =  1.0 / frame_interval.as_secs_f32().min(1.0); 
+
+                        if frame_loss_avg < framerate * 0.05 { // if the frame loss avg doesn't exceed the 5% of FPS mark: 
+                            if self.network_latency_average.get_average() >= frame_interval  { // if the avg. latency surpasses 1/fps
+                                if self.last_jitter >= *threshold {
+                                    bitrate_bps = bitrate_bps - *steps; //decrease bitrate by 1 step
+                                    bitrate_bps = minmax_bitrate(bitrate_bps, max_bitrate_mbps, min_bitrate_mbps);
+                                }
+                                else{
+                                    bitrate_bps = minmax_bitrate(bitrate_bps, max_bitrate_mbps, min_bitrate_mbps); //keep as is, minmax for robustness
+                                }
+                            }
+                            else{
+                                if self.last_jitter <= *threshold {
+                                    bitrate_bps = bitrate_bps + *steps; //increase bitrate by 1 step
+                                    bitrate_bps = minmax_bitrate(bitrate_bps, max_bitrate_mbps, min_bitrate_mbps);
+                                }
+                                else{
+                                    bitrate_bps = minmax_bitrate(bitrate_bps, max_bitrate_mbps, min_bitrate_mbps); //keep as is, minmax for robustness
+                                }
+                            }
+                        } 
+                        else{ // excessive frame-loss
+                            bitrate_bps = bitrate_bps - *steps; //decrease bitrate by 1 step
+                            bitrate_bps = minmax_bitrate(bitrate_bps, max_bitrate_mbps, min_bitrate_mbps);
+                        }
+                    }
+                }
+                self.last_target_bitrate = bitrate_bps;
+                if let Switch::Enabled(max) = max_bitrate_mbps {
+                    stats.manual_max_bps = Some(*max);
+                }
+                if let Switch::Enabled(min) = min_bitrate_mbps {
+                    stats.manual_min_bps = Some(*min);
+                }
+                bitrate_bps
+            }
             BitrateMode::Adaptive {
                 saturation_multiplier,
                 max_bitrate_mbps,
                 min_bitrate_mbps,
                 max_network_latency_ms,
                 encoder_latency_limiter,
-                ..
+                decoder_latency_limiter, 
             } => {
                 // let initial_bitrate_average_bps = self.bitrate_average.get_average();
                 let initial_bitrate_average_bps = self.last_target_bitrate; 
@@ -233,6 +312,8 @@ impl BitrateManager {
 
                 bitrate_bps
             }
+
+            
         };
 
         stats.requested_bps = bitrate_bps;
