@@ -11,6 +11,10 @@ struct HistoryFrame {
     input_acquired: Instant,
     video_packet_received: Instant,
     client_stats: ClientStatistics,
+
+    is_decoded: bool,
+    is_composed: bool,
+    is_submitted: bool,
 }
 
 pub struct StatisticsManager {
@@ -56,8 +60,12 @@ impl StatisticsManager {
                 video_packet_received: Instant::now(),
                 client_stats: ClientStatistics {
                     target_timestamp,
+                    frame_index: 0, 
                     ..Default::default()
                 },
+                is_decoded: false,
+                is_composed: false,
+                is_submitted: false, 
             });
         }
 
@@ -73,66 +81,85 @@ impl StatisticsManager {
             .find(|frame| frame.client_stats.target_timestamp == target_timestamp)
         {
             frame.video_packet_received = Instant::now();
+            self.stats_history_buffer.push_back(frame.clone());
+           
+            if self.stats_history_buffer.len() > self.max_history_size {
+                self.stats_history_buffer.pop_front();
+            }
         }
     }
 
-    pub fn report_video_statistics(&mut self, target_timestamp: Duration, video_stats: VideoStatsRx)
-    {
-        if let Some(frame) = self
-        .history_buffer
-        .iter_mut()
-        .find(|frame| frame.client_stats.target_timestamp == target_timestamp)
-        {
-            frame.client_stats.jitter_avg_frame = video_stats.jitter_avg_frame; 
-            frame.client_stats.frame_span = video_stats.frame_span; 
+    pub fn report_video_statistics(
+        &mut self,
+        target_timestamp: Duration,
+        video_stats: VideoStatsRx,
+    ) {
+        if let Some(frame) = self.stats_history_buffer.iter_mut().find(|frame| {
+            frame.client_stats.target_timestamp == target_timestamp
+                && frame.client_stats.frame_index == -1
+        }) {
+            frame.client_stats.frame_index = video_stats.frame_index as i32;
+
+            frame.client_stats.frame_span = video_stats.frame_span;
             frame.client_stats.frame_interarrival = video_stats.frame_interarrival;
-            frame.client_stats.rx_bytes = video_stats.rx_bytes;      
-            frame.client_stats.bytes_in_frame = video_stats.bytes_in_frame;  
+
+            frame.client_stats.jitter_avg_frame = video_stats.jitter_avg_frame;
+            frame.client_stats.filtered_ow_delay = video_stats.filtered_ow_delay;
+
+            frame.client_stats.rx_bytes = video_stats.rx_bytes;
+            frame.client_stats.bytes_in_frame = video_stats.bytes_in_frame;
             frame.client_stats.bytes_in_frame_app = video_stats.bytes_in_frame_app;
 
-            frame.client_stats.filtered_ow_delay = video_stats.filtered_ow_delay; 
-            frame.client_stats.rx_shard_counter = video_stats.rx_shard_counter; 
-            frame.client_stats.duplicated_shard_counter = video_stats.duplicated_shard_counter; 
-            frame.client_stats.highest_rx_frame_index = video_stats.highest_rx_frame_index; 
-            frame.client_stats.highest_rx_shard_index = video_stats.highest_rx_shard_index; 
-            frame.client_stats.frames_skipped = video_stats.frames_skipped; 
+            frame.client_stats.frames_skipped = video_stats.frames_skipped;
             frame.client_stats.frames_dropped = video_stats.frames_dropped;
-            frame.client_stats.frame_index = video_stats.frame_index; 
+
+            frame.client_stats.rx_shard_counter = video_stats.rx_shard_counter;
+            frame.client_stats.duplicated_shard_counter = video_stats.duplicated_shard_counter;
+
+            frame.client_stats.highest_rx_frame_index = video_stats.highest_rx_frame_index;
+            frame.client_stats.highest_rx_shard_index = video_stats.highest_rx_shard_index;
+        }
+    }
+    
+    pub fn report_video_packet_dropped(&mut self, frame_index: u32) {
+        if let Some(index) = self
+            .stats_history_buffer
+            .iter()
+            .position(|frame| frame.client_stats.frame_index == frame_index as i32)
+        {
+            self.stats_history_buffer.remove(index);
         }
     }
     pub fn report_frame_decoded(&mut self, target_timestamp: Duration) {
-        if let Some(frame) = self
-            .stats_history_buffer
-            .iter_mut()
-            .find(|frame| frame.client_stats.target_timestamp == target_timestamp)
-        {
-            frame.client_stats.video_decode =
-                Instant::now().saturating_duration_since(frame.video_packet_received);
+        if let Some(frame) = self.stats_history_buffer.iter_mut().find(|frame| {
+            frame.client_stats.target_timestamp == target_timestamp && !frame.is_decoded
+        }) {
+            frame.is_decoded = true;
+         
+            frame.client_stats.video_decode = Instant::now().saturating_duration_since(frame.video_packet_received);
         }
     }
 
     pub fn report_compositor_start(&mut self, target_timestamp: Duration) {
-        if let Some(frame) = self
-            .stats_history_buffer
-            .iter_mut()
-            .find(|frame| frame.client_stats.target_timestamp == target_timestamp)
-        {
+        if let Some(frame) = self.stats_history_buffer.iter_mut().find(|frame| {
+            frame.client_stats.target_timestamp == target_timestamp && !frame.is_composed
+        }) {
+            frame.is_composed = true;
+
             frame.client_stats.video_decoder_queue = Instant::now().saturating_duration_since(
                 frame.video_packet_received + frame.client_stats.video_decode,
             );
         }
     }
-
     // vsync_queue is the latency between this call and the vsync. it cannot be measured by ALVR and
     // should be reported by the VR runtime
     pub fn report_submit(&mut self, target_timestamp: Duration, vsync_queue: Duration) {
         let now = Instant::now();
 
-        if let Some(frame) = self
-            .stats_history_buffer
-            .iter_mut()
-            .find(|frame| frame.client_stats.target_timestamp == target_timestamp)
-        {
+        if let Some(frame) = self.stats_history_buffer.iter_mut().find(|frame| {
+            frame.client_stats.target_timestamp == target_timestamp && !frame.is_submitted
+        }) {
+            frame.is_submitted = true;
             frame.client_stats.rendering = now.saturating_duration_since(
                 frame.video_packet_received
                     + frame.client_stats.video_decode
@@ -150,11 +177,37 @@ impl StatisticsManager {
         }
     }
 
-    pub fn summary(&self, target_timestamp: Duration) -> Option<ClientStatistics> {
-        self.history_buffer
+    pub fn summary(&mut self, target_timestamp: Duration) -> Option<ClientStatistics> {
+        if let Some(index) = self
+            .stats_history_buffer
             .iter()
-            .find(|frame| frame.client_stats.target_timestamp == target_timestamp)
-            .map(|frame| frame.client_stats.clone())
+            .position(|frame| frame.client_stats.target_timestamp == target_timestamp)
+        {
+            if let Some(frame) = self.stats_history_buffer.remove(index) {
+                let mut frame_client_stats_clone = frame.client_stats.clone();
+
+                // accumulate the metrics when frames are dropped after decoding
+                self.stats_history_buffer.retain(|frame_dropped| {
+                    if frame_dropped.client_stats.target_timestamp < target_timestamp {
+                        frame_client_stats_clone.frame_interarrival += frame_dropped.client_stats.frame_interarrival;
+                        frame_client_stats_clone.rx_bytes += frame_dropped.client_stats.rx_bytes;
+                        frame_client_stats_clone.duplicated_shard_counter += frame_dropped.client_stats.duplicated_shard_counter;
+                        frame_client_stats_clone.rx_shard_counter += frame_dropped.client_stats.rx_shard_counter;
+                        frame_client_stats_clone.frames_skipped += frame_dropped.client_stats.frames_skipped;
+                        frame_client_stats_clone.frames_dropped += frame_dropped.client_stats.frames_dropped + 1;
+                        false
+                    } else {
+                        true
+                    }
+                });
+                
+                Some(frame_client_stats_clone)
+            } else {
+                None
+            }
+        } else {
+            None
+        }
     }
 
     // latency used for head prediction

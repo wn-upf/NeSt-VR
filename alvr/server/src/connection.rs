@@ -576,12 +576,11 @@ fn connection_pipeline(
                     .copy_from_slice(&payload);
                 video_sender.send(buffer).ok();
                 
-                let frame_sent_id = video_sender.get_last_packet_id();
-                let spf = video_sender.get_shards_count(); 
+                let frame_index = video_sender.get_last_packet_id();
+                let shards_count = video_sender.get_shards_count();
 
                 if let Some(stats) = &mut *STATISTICS_MANAGER.lock() {
-                    stats.report_frame_sent(frame_sent_id, spf);  
-                }
+                    stats.report_frame_sent(header.timestamp, frame_index, shards_count);                }
 
             }
         }

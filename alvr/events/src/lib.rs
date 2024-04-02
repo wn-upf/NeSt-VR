@@ -33,7 +33,6 @@ pub struct NominalBitrateStats {
     pub manual_min_bps: Option<f32>,
     pub requested_bps: f32,
 }
-
 #[derive(Serialize, Deserialize, Clone, Debug, Default)]
 pub struct GraphStatistics {
     pub total_pipeline_latency_s: f32,
@@ -50,26 +49,25 @@ pub struct GraphStatistics {
     pub nominal_bitrate: NominalBitrateStats,
     pub actual_bitrate_bps: f32,
 
-    pub jitter_avg_frame:   f32, 
-    pub frame_span:         f32, 
-    pub frame_interarrival: f32, 
-    pub rx_bytes :          u32, 
-
-    pub network_throughput_bps: f32,
-    pub peak_network_throughput_bps: f32, 
-    pub application_throughput_bps: f32, 
-
-    pub filtered_ow_delay:      f32, 
-    pub rx_shard_counter:       u32, 
-    pub duplicated_shard_counter: u32,
-    pub frames_dropped:           u32, 
-    pub frames_skipped:              u32, 
-    pub frame_loss:               u32, 
-    pub shard_loss_server:       usize, 
-
     pub frame_index: u32,
     pub is_idr: bool,
-    pub target_timestamp: Duration
+
+    pub frame_span_s: f32,
+    pub frame_interarrival_s: f32,
+
+    pub jitter_avg_frame: f32,
+    pub filtered_ow_delay: f32,
+
+    pub network_throughput_bps: f32,
+    pub peak_network_throughput_bps: f32,
+    pub application_throughput_bps: f32,
+
+    pub frames_dropped: u32,
+    pub frames_skipped: u32,
+    pub frame_loss: u32,
+
+    pub shards_lost: usize,
+    pub shards_duplicated: u32,
 }
 
 #[derive(Serialize, Deserialize, Clone, Debug)]

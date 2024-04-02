@@ -38,24 +38,28 @@ use std::{
 };
 
 #[derive(Copy, Clone)]
-pub struct VideoStatsRx{
-    pub jitter_avg_frame:   f32, 
-    pub frame_span:         f32, 
-    pub frame_interarrival: f32, 
-    pub rx_bytes:           u32, 
-    pub bytes_in_frame:     u32, 
-    pub bytes_in_frame_app: u32, 
+pub struct VideoStatsRx {
+    pub frame_index: u32,
 
-    pub filtered_ow_delay:  f32, 
-    pub rx_shard_counter:   u32, 
+    pub frame_span: f32,
+    pub frame_interarrival: f32,
+
+    pub jitter_avg_frame: f32,
+    pub filtered_ow_delay: f32,
+
+    pub rx_bytes: u32,
+    pub bytes_in_frame: u32,
+    pub bytes_in_frame_app: u32,
+
+    pub frames_skipped: u32,
+    pub frames_dropped: u32,
+
+    pub rx_shard_counter: u32,
     pub duplicated_shard_counter: u32,
-    pub highest_rx_frame_index: i32, 
-    pub highest_rx_shard_index: i32,
-    pub frames_skipped:              u32, 
-    pub frames_dropped:     u32, 
-    pub frame_index:        u32, 
-}
 
+    pub highest_rx_frame_index: i32,
+    pub highest_rx_shard_index: i32,
+}
 #[cfg(target_os = "android")]
 use crate::audio;
 #[cfg(not(target_os = "android"))]
@@ -290,23 +294,28 @@ fn connection_pipeline(
     )?;
 
     info!("Connected to server");
-    let mut videoStats = VideoStatsRx{
-        jitter_avg_frame: 0.0, 
-        frame_span:        0.0, 
-        frame_interarrival: 0.0,
-        rx_bytes:           0, 
-        bytes_in_frame:     0, 
-        bytes_in_frame_app: 0, 
+    let mut videoStats = VideoStatsRx {
+        frame_index: 0,
 
-        filtered_ow_delay:  0.0, 
-        rx_shard_counter:   0, 
+        frame_span: 0.0,
+        frame_interarrival: 0.0,
+
+        jitter_avg_frame: 0.0,
+        filtered_ow_delay: 0.0,
+
+        rx_bytes: 0,
+        bytes_in_frame: 0,
+        bytes_in_frame_app: 0,
+
+        frames_skipped: 0,
+        frames_dropped: 0,
+
+        rx_shard_counter: 0,
         duplicated_shard_counter: 0,
-        highest_rx_frame_index: 0, 
+
+        highest_rx_frame_index: 0,
         highest_rx_shard_index: 0,
-        frames_skipped:         0, 
-        frames_dropped:         0, 
-        frame_index:            0, 
-    }; 
+    };
     {
         let config = &mut *DECODER_INIT_CONFIG.lock();
 
@@ -336,23 +345,21 @@ fn connection_pipeline(
                 return;
             };
 
-            videoStats.jitter_avg_frame = data.get_jitter_avg_frame();
+            videoStats.frame_index = data.get_frame_index();
+
             videoStats.frame_span = data.get_frame_span();
-            videoStats.frame_interarrival += data.get_frame_interarrival(); 
-            videoStats.rx_bytes += data.get_rx_bytes(); 
-            videoStats.bytes_in_frame = data.get_bytes_in_frame(); 
+            videoStats.jitter_avg_frame = data.get_jitter_avg_frame();
+            videoStats.filtered_ow_delay = data.get_filtered_ow_delay();
+            videoStats.bytes_in_frame = data.get_bytes_in_frame();
             videoStats.bytes_in_frame_app = data.get_bytes_in_frame_app();
-            videoStats.filtered_ow_delay = data.get_filtered_ow_delay(); 
-            videoStats.highest_rx_frame_index = data.get_highest_rx_frame_index(); 
-            videoStats.highest_rx_shard_index = data.get_highest_rx_shard_index(); 
+            videoStats.highest_rx_frame_index = data.get_highest_rx_frame_index();
+            videoStats.highest_rx_shard_index = data.get_highest_rx_shard_index();
 
-
-            videoStats.rx_bytes         += data.get_rx_bytes(); 
-            videoStats.rx_shard_counter += data.get_rx_shard_counter(); 
-            videoStats.duplicated_shard_counter += data.get_duplicated_shard_counter(); 
-            videoStats.frame_interarrival += data.get_frame_interarrival(); 
-            videoStats.frames_skipped += data.get_frames_skipped(); 
-            videoStats.frame_index = data.get_frame_index(); 
+            videoStats.frame_interarrival += data.get_frame_interarrival();
+            videoStats.rx_bytes += data.get_rx_bytes();
+            videoStats.frames_skipped += data.get_frames_skipped();
+            videoStats.rx_shard_counter += data.get_rx_shard_counter();
+            videoStats.duplicated_shard_counter += data.get_duplicated_shard_counter();
 
             if let Some(stats) = &mut *STATISTICS_MANAGER.lock() {
                 stats.report_video_packet_received(header.timestamp);
@@ -365,7 +372,7 @@ fn connection_pipeline(
                 if let Some(sender) = &mut *CONTROL_SENDER.lock() {
                     sender.send(&ClientControlPacket::RequestIdr).ok();
                 }
-                warn!("Network dropped video packet");
+                warn!("Network dropped {} video packets", data.get_frames_skipped()); 
             }
             if !stream_corrupted || !settings.connection.avoid_video_glitching {
                 if !decoder::push_nal(header.timestamp, nal) {
@@ -374,18 +381,24 @@ fn connection_pipeline(
                         sender.send(&ClientControlPacket::RequestIdr).ok();
                         videoStats.frames_dropped += 1; 
                     }
-                    warn!("Dropped video packet. Reason: Decoder saturation")
-                }
+                    
+                    if let Some(stats) = *CONTROL_SENDER.lock(){
+                        stats.report_video_packet_dropped(data.get_frame_index());
+                    }
+                    warn!(
+                        "Dropped video packet {}. Reason: Decoder saturation",
+                        data.get_frame_index()
+                    )                }
                 else{ //case where frame is decoded correctly
                     if let Some(stats) = &mut *STATISTICS_MANAGER.lock() {
                         stats.report_video_statistics(header.timestamp, videoStats);
                     }
-                    videoStats.frame_interarrival = 0.0; 
-                    videoStats.rx_bytes = 0; 
+                    videoStats.frame_interarrival = 0.0;
+                    videoStats.rx_bytes = 0;
                     videoStats.duplicated_shard_counter = 0;
-                    videoStats.rx_shard_counter = 0; 
-                    videoStats.frames_skipped = 0; 
-                    videoStats.frames_dropped = 0; 
+                    videoStats.rx_shard_counter = 0;
+                    videoStats.frames_skipped = 0;
+                    videoStats.frames_dropped = 0;
                     
                 }
             } else {
@@ -393,7 +406,10 @@ fn connection_pipeline(
                     sender.send(&ClientControlPacket::RequestIdr).ok();
                 }
                 videoStats.frames_dropped += 1; 
-                warn!("Dropped video packet. Reason: Waiting for IDR frame")
+                if let Some(stats) = *CONTROL_SENDER.lock(){
+                    stats.report_video_packet_dropped(data.get_frame_index());
+                }
+                warn!("Dropped video packet {}. Reason: Waiting for IDR frame", data.get_frame_index())
             }
         }
     });
