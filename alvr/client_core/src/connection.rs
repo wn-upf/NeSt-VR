@@ -41,8 +41,8 @@ pub struct VideoStatsRx {
     pub frame_span: f32,
     pub frame_interarrival: f32,
 
-    pub jitter_avg_frame: f32,
-    pub filtered_ow_delay: f32,
+    pub interarrival_jitter: f32,
+    pub ow_delay: f32,
 
     pub rx_bytes: u32,
     pub bytes_in_frame: u32,
@@ -306,8 +306,8 @@ fn connection_pipeline(
         frame_span: 0.0,
         frame_interarrival: 0.0,
 
-        jitter_avg_frame: 0.0,
-        filtered_ow_delay: 0.0,
+        interarrival_jitter: 0.0,
+        ow_delay: 0.0,
 
         rx_bytes: 0,
         bytes_in_frame: 0,
@@ -352,8 +352,8 @@ fn connection_pipeline(
                 videoStats.frame_index = data.get_frame_index();
 
                 videoStats.frame_span = data.get_frame_span();
-                videoStats.jitter_avg_frame = data.get_jitter_avg_frame();
-                videoStats.filtered_ow_delay = data.get_filtered_ow_delay();
+                videoStats.interarrival_jitter = data.get_interarrival_jitter();
+                videoStats.ow_delay = data.get_ow_delay();
                 videoStats.bytes_in_frame = data.get_bytes_in_frame();
                 videoStats.bytes_in_frame_app = data.get_bytes_in_frame_app();
                 videoStats.highest_rx_frame_index = data.get_highest_rx_frame_index();

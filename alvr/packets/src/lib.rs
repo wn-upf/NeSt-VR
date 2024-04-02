@@ -339,8 +339,8 @@ pub struct ClientStatistics {
     pub frame_span: f32,
     pub frame_interarrival: f32,
 
-    pub jitter_avg_frame: f32,
-    pub filtered_ow_delay: f32,
+    pub interarrival_jitter: f32,
+    pub ow_delay: f32,
 
     pub rx_bytes: u32,
     pub bytes_in_frame: u32,

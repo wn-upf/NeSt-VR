@@ -350,17 +350,53 @@ impl StatisticsTab {
             ui[0].label("Bitrate:");
             ui[1].label(&format!("{:.1} Mbps", statistics.video_mbits_per_sec));
 
+            ui[0].label("Game delay:");
+            ui[1].label(&format!("{:.2} ms", statistics.game_delay_average_ms));
+
+            ui[0].label("Server compositor delay:");
+            ui[1].label(&format!(
+                "{:.2} ms",
+                statistics.server_compositor_delay_average_ms
+            ));
+
+            ui[0].label("Encoder delay:");
+            ui[1].label(&format!("{:.2} ms", statistics.encode_delay_average_ms));
+
+            ui[0].label("Network delay:");
+            ui[1].label(&format!("{:.2} ms", statistics.network_delay_average_ms));
+
+            ui[0].label("Decoder delay:");
+            ui[1].label(&format!("{:.2} ms", statistics.decode_delay_average_ms));
+
+            ui[0].label("Decoder queue delay:");
+            ui[1].label(&format!(
+                "{:.2} ms",
+                statistics.decoder_queue_delay_average_ms
+            ));
+
+            ui[0].label("Client compositor delay:");
+            ui[1].label(&format!(
+                "{:.2} ms",
+                statistics.client_compositor_average_ms
+            ));
+
+            ui[0].label("Vsync delay:");
+            ui[1].label(&format!(
+                "{:.2} ms",
+                statistics.vsync_queue_delay_average_ms
+            ));
+
             ui[0].label("Total latency:");
-            ui[1].label(&format!("{:.0} ms", statistics.total_latency_ms));
+            ui[1].label(&format!(
+                "{:.0} ms",
+                statistics.total_pipeline_latency_average_ms
+            ));
 
-            ui[0].label("Encoder latency:");
-            ui[1].label(&format!("{:.2} ms", statistics.encode_latency_ms));
-
-            ui[0].label("Transport latency:");
-            ui[1].label(&format!("{:.2} ms", statistics.network_latency_ms));
-
-            ui[0].label("Decoder latency:");
-            ui[1].label(&format!("{:.2} ms", statistics.decode_latency_ms));
+            ui[0].label("Frame jitter:");
+            ui[1].label(&format!(
+                "{:.0} ms",
+                statistics.frame_jitter_ms
+            ));
 
             ui[0].label("Total packets lost:");
             ui[1].label(&format!(

@@ -1136,10 +1136,6 @@ fn connection_pipeline(
                         unsafe { crate::RequestIDR() }
                     }
                     ClientControlPacket::VideoErrorReport => {
-                        // legacy endpoint. todo: remove
-                        if let Some(stats) = &mut *STATISTICS_MANAGER.lock() {
-                            stats.report_packet_loss();
-                        }
                         unsafe { crate::VideoErrorReportReceive() };
                     }
                     ClientControlPacket::ViewsConfig(config) => unsafe {

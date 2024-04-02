@@ -16,6 +16,7 @@
 // Note: We can't clone the underlying socket for each StreamSender and the mutex around the socket
 // cannot be removed. This is because we need to make sure at least shards are written whole.
 use crate::backend::{tcp, udp, SocketReader, SocketWriter};
+use alvr_common::StatesWebrtc;
 use alvr_common::{
     anyhow::Result, debug, parking_lot::Mutex, AnyhowToCon, ConResult, HandleTryAgain, ToCon,
 };
@@ -33,7 +34,6 @@ use std::{
     sync::{mpsc, Arc},
     time::{Duration, Instant},
 };
-use alvr_common::StatesWebrtc; 
 
 const Q_KALMAN: f32 = 10E-3;
 
@@ -53,12 +53,11 @@ pub struct KalmanFilter {
     adaptive_threshold: f32,
     adaptive_threshold_prev: f32,
 
-    k_threshold_u : f32,
-    k_threshold_d: f32, 
+    k_threshold_u: f32,
+    k_threshold_d: f32,
 
-    state: StatesWebrtc, 
-    last_not_overuse_instant: Instant, 
-
+    state: StatesWebrtc,
+    last_not_overuse_instant: Instant,
 }
 impl Default for KalmanFilter {
     fn default() -> Self {
@@ -75,42 +74,39 @@ impl Default for KalmanFilter {
             measured_delay: 0.0,
             abs_m: 0.0,
             adaptive_threshold: 0.0,
-            adaptive_threshold_prev: 0.0, 
+            adaptive_threshold_prev: 0.0,
 
-            k_threshold_u : 0.01,
-            k_threshold_d: 0.00018, 
+            k_threshold_u: 0.01,
+            k_threshold_d: 0.00018,
 
-            state: StatesWebrtc::NORMAL, 
-            last_not_overuse_instant: Instant::now(), 
+            state: StatesWebrtc::NORMAL,
+            last_not_overuse_instant: Instant::now(),
         }
     }
 }
-impl KalmanFilter{
+impl KalmanFilter {
     fn k_threshold(&self) -> f32 {
-        if f32::abs(self.m_current) < self.adaptive_threshold_prev{
+        if f32::abs(self.m_current) < self.adaptive_threshold_prev {
             self.k_threshold_d
-        }
-        else{
+        } else {
             self.k_threshold_u
         }
     }
-    fn state_gcc(&mut self){
-        if self.m_current > self.adaptive_threshold{
+    fn state_gcc(&mut self) {
+        if self.m_current > self.adaptive_threshold {
+            let time_since_not_overuse =
+                Instant::now().duration_since(self.last_not_overuse_instant);
 
-            let time_since_not_overuse = Instant::now().duration_since(self.last_not_overuse_instant);
-            
-            if time_since_not_overuse > Duration::from_millis(100){
-                self.state = StatesWebrtc::OVERUSE; 
+            if time_since_not_overuse > Duration::from_millis(100) {
+                self.state = StatesWebrtc::OVERUSE;
             }
-            }
-
-        else if self.m_current < (-self.adaptive_threshold) {
-            self.state = StatesWebrtc::UNDERUSE; 
+        } else if self.m_current < (-self.adaptive_threshold) {
+            self.state = StatesWebrtc::UNDERUSE;
             self.last_not_overuse_instant = Instant::now()
-
-        }
-        else if self.m_current >= -self.adaptive_threshold && self.m_current <= self.adaptive_threshold{
-            self.state = StatesWebrtc::NORMAL; 
+        } else if self.m_current >= -self.adaptive_threshold
+            && self.m_current <= self.adaptive_threshold
+        {
+            self.state = StatesWebrtc::NORMAL;
             self.last_not_overuse_instant = Instant::now()
         }
     }
@@ -179,8 +175,8 @@ pub struct StreamSender<H> {
     used_buffers: Vec<Vec<u8>>,
     _phantom: PhantomData<H>,
 
-    last_shard_instant: Option<Instant>,
     shards_count: usize,
+    reference_time: Instant,
 }
 
 impl<H> StreamSender<H> {
@@ -198,17 +194,9 @@ impl<H> StreamSender<H> {
         let data_size = actual_buffer_size - SHARD_PREFIX_SIZE;
         let shards_count = (data_size as f32 / max_shard_data_size as f32).ceil() as usize;
 
-        let mut duration: f32 = 0.0; 
-        
-        if let Some(shard_instant) = self.last_shard_instant{
-            duration = Instant::now().duration_since(shard_instant).as_secs_f32(); // make duration be the one since first shard of previous frame
-        }
         for idx in 0..shards_count {
             // this overlaps with the previous shard, this is intended behavior and allows to
             // reduce allocations
-            if idx == 0 {
-                self.last_shard_instant = Some(Instant::now());
-            }
 
             let packet_start_position = idx * max_shard_data_size;
             let sub_buffer = &mut buffer.inner[packet_start_position..];
@@ -219,6 +207,10 @@ impl<H> StreamSender<H> {
                 actual_buffer_size - packet_start_position,
             );
 
+            let tx_r_instant: f32 = Instant::now()
+                .duration_since(self.reference_time)
+                .as_secs_f32();
+
             // todo: switch to little endian
             // todo: do not remove sizeof<u32> for packet length
             sub_buffer[0..4]
@@ -227,10 +219,9 @@ impl<H> StreamSender<H> {
             sub_buffer[6..10].copy_from_slice(&self.next_packet_index.to_be_bytes());
             sub_buffer[10..14].copy_from_slice(&(shards_count as u32).to_be_bytes());
             sub_buffer[14..18].copy_from_slice(&(idx as u32).to_be_bytes());
-            sub_buffer[18..22].copy_from_slice(&duration.to_be_bytes());
+            sub_buffer[18..22].copy_from_slice(&tx_r_instant.to_be_bytes());
 
             self.inner.lock().send(&sub_buffer[..packet_length])?;
-
         }
         self.shards_count = shards_count;
         self.next_packet_index += 1;
@@ -279,8 +270,8 @@ pub struct ReceiverData<H> {
     frame_span: f32,
     frame_interarrival: f32,
 
-    jitter_avg_frame: f32,
-    filtered_ow_delay: f32,
+    interarrival_jitter: f32,
+    ow_delay: f32,
 
     rx_bytes: u32,
     bytes_in_frame: u32,
@@ -293,9 +284,9 @@ pub struct ReceiverData<H> {
 
     highest_rx_frame_index: i32,
     highest_rx_shard_index: i32,
-    
-    threshold_gcc: f32, 
-    internal_state_gcc: StatesWebrtc, 
+
+    threshold_gcc: f32,
+    internal_state_gcc: StatesWebrtc,
 }
 
 impl<H> ReceiverData<H> {
@@ -311,11 +302,11 @@ impl<H> ReceiverData<H> {
     pub fn get_frame_interarrival(&self) -> f32 {
         self.frame_interarrival
     }
-    pub fn get_jitter_avg_frame(&self) -> f32 {
-        self.jitter_avg_frame
+    pub fn get_interarrival_jitter(&self) -> f32 {
+        self.interarrival_jitter
     }
-    pub fn get_filtered_ow_delay(&self) -> f32 {
-        self.filtered_ow_delay
+    pub fn get_ow_delay(&self) -> f32 {
+        self.ow_delay
     }
     pub fn get_rx_bytes(&self) -> u32 {
         self.rx_bytes
@@ -380,8 +371,8 @@ struct ReconstructedPacket {
     frame_span: f32,
     frame_interarrival: f32,
 
-    jitter_avg_frame: f32,
-    filtered_ow_delay: f32,
+    interarrival_jitter: f32,
+    ow_delay: f32,
 
     rx_bytes: u32,
     bytes_in_frame: u32,
@@ -393,8 +384,8 @@ struct ReconstructedPacket {
     highest_rx_frame_index: i32,
     highest_rx_shard_index: i32,
 
-    threshold_gcc: f32, 
-    internal_state_gcc: StatesWebrtc, 
+    threshold_gcc: f32,
+    internal_state_gcc: StatesWebrtc,
 }
 
 pub struct StreamReceiver<H> {
@@ -482,8 +473,8 @@ impl<H: DeserializeOwned + Serialize> StreamReceiver<H> {
             frame_span: packet.frame_span,
             frame_interarrival: interarrival,
 
-            jitter_avg_frame: packet.jitter_avg_frame,
-            filtered_ow_delay: packet.filtered_ow_delay,
+            interarrival_jitter: packet.interarrival_jitter,
+            ow_delay: packet.ow_delay,
 
             rx_bytes: rx_bytes_val,
             bytes_in_frame: packet.bytes_in_frame,
@@ -497,7 +488,7 @@ impl<H: DeserializeOwned + Serialize> StreamReceiver<H> {
             highest_rx_frame_index: packet.highest_rx_frame_index,
             highest_rx_shard_index: packet.highest_rx_shard_index,
             threshold_gcc: packet.threshold_gcc,
-            internal_state_gcc: packet.internal_state_gcc, 
+            internal_state_gcc: packet.internal_state_gcc,
         })
     }
 }
@@ -572,8 +563,14 @@ impl StreamSocketBuilder {
             map_rx: HashMap::new(),
             rx_bytes: 0,
 
+            prev_shard_tx_r_instant: None,
+            prev_shard_rx_instant: None,
+
+            interarrival_jitter: 0.,
+
             kalman: KalmanFilter::default(),
-            last_shard_in_frame_instant: Instant::now(),
+            prev_frame_rx_instant: Instant::now(),
+            prev_frame_tx_r_instant: None,
 
             rx_shard_counter: 0,
             duplicated_shard_counter: 0,
@@ -631,8 +628,14 @@ impl StreamSocketBuilder {
             map_rx: HashMap::new(),
             rx_bytes: 0,
 
+            prev_shard_tx_r_instant: None,
+            prev_shard_rx_instant: None,
+
+            interarrival_jitter: 0.,
+
             kalman: KalmanFilter::default(),
-            last_shard_in_frame_instant: Instant::now(),
+            prev_frame_rx_instant: Instant::now(),
+            prev_frame_tx_r_instant: None,
 
             rx_shard_counter: 0,
             duplicated_shard_counter: 0,
@@ -682,8 +685,14 @@ pub struct StreamSocket {
     map_rx: HashMap<u32, HashMap<usize, ShardMapStats>>,
     rx_bytes: u32,
 
+    prev_shard_tx_r_instant: Option<f32>,
+    prev_shard_rx_instant: Option<Instant>,
+
+    interarrival_jitter: f32,
+
     kalman: KalmanFilter,
-    last_shard_in_frame_instant: Instant,
+    prev_frame_rx_instant: Instant,
+    prev_frame_tx_r_instant: Option<f32>,
 
     rx_shard_counter: u32,
     duplicated_shard_counter: u32,
@@ -693,7 +702,7 @@ pub struct StreamSocket {
 }
 #[derive(Clone)]
 struct ShardMapStats {
-    tx_duration: f32,
+    tx_r_instant: f32,
     rx_instant: Instant,
     rx_bytes: u32,
     rx_bytes_app: u32,
@@ -708,8 +717,8 @@ impl StreamSocket {
             next_packet_index: 0,
             used_buffers: vec![],
             _phantom: PhantomData,
-            last_shard_instant: None,
             shards_count: 0,
+            reference_time: Instant::now(),
         }
     }
 
@@ -776,9 +785,11 @@ impl StreamSocket {
             let packet_index = u32::from_be_bytes(bytes[6..10].try_into().unwrap());
             let shards_count = u32::from_be_bytes(bytes[10..14].try_into().unwrap()) as usize;
             let shard_index = u32::from_be_bytes(bytes[14..18].try_into().unwrap()) as usize;
-            let tx_duration = f32::from_be_bytes(bytes[18..22].try_into().unwrap());
+            let tx_r_instant = f32::from_be_bytes(bytes[18..22].try_into().unwrap());
 
             if stream_id == VIDEO {
+                let rx_instant = Instant::now();
+
                 if self.highest_rx_frame_index == packet_index as i32 {
                     if self.highest_rx_shard_index < shard_index as i32 {
                         self.highest_rx_shard_index = shard_index as i32;
@@ -793,8 +804,8 @@ impl StreamSocket {
                     SocketProtocol::Tcp => 54,
                 };
                 let packet = ShardMapStats {
-                    tx_duration,
-                    rx_instant: Instant::now(),
+                    tx_r_instant,
+                    rx_instant,
                     rx_bytes: shard_length as u32 + header_bytes_transport,
                     rx_bytes_app: (shard_length - SHARD_PREFIX_SIZE) as u32,
                 };
@@ -802,6 +813,20 @@ impl StreamSocket {
                 shards_map.insert(shard_index, packet);
 
                 self.rx_bytes += shard_length as u32 + header_bytes_transport;
+
+                // Jitter
+                {
+                    if let (Some(prev_shard_rx_instant), Some(prev_shard_tx_r_instant)) =
+                        (self.prev_shard_rx_instant, self.prev_shard_tx_r_instant)
+                    {
+                        let transit_diff = (rx_instant - prev_shard_rx_instant).as_secs_f32()
+                            - (tx_r_instant - prev_shard_tx_r_instant); // D(i-1,i), according to RFC 3550
+                        self.interarrival_jitter +=
+                            (transit_diff.abs() - self.interarrival_jitter) / 16.0;
+                    }
+                    self.prev_shard_tx_r_instant = Some(tx_r_instant);
+                    self.prev_shard_rx_instant = Some(rx_instant);
+                }
             }
             self.shard_recv_state.insert(RecvState {
                 shard_length,
@@ -935,8 +960,6 @@ impl StreamSocket {
             }
         }
 
-        let mut jitter_avg = 0.0;
-
         let mut frame_span = 0.0;
         let mut frame_interarrival: f32 = 0.0;
 
@@ -953,69 +976,61 @@ impl StreamSocket {
 
                     frame_span = max_time.saturating_duration_since(min_time).as_secs_f32();
                     frame_interarrival = max_time
-                        .saturating_duration_since(self.last_shard_in_frame_instant)
+                        .saturating_duration_since(self.prev_frame_rx_instant)
                         .as_secs_f32();
 
-                    self.last_shard_in_frame_instant = max_time;
+                    self.prev_frame_rx_instant = max_time;
 
                     all_bytes_in_frame = values.iter().map(|shard| shard.rx_bytes).sum();
                     all_bytes_in_frame_app = values.iter().map(|shard| shard.rx_bytes_app).sum();
 
-                    // Jitter computation
+                    // One way delay gradient
                     {
-                        let mut sorted_keys: Vec<usize> = inner_map.keys().copied().collect();
-                        sorted_keys.sort_unstable_by_key(|&k| Reverse(k));
-
-                        let ordered_values: Vec<&ShardMapStats> = sorted_keys
-                            .iter()
-                            .filter_map(|&key| inner_map.get(&key))
-                            .collect();
-
-                        let mut prev_instant_rx = Instant::now();
-                        let mut index = 0;
-                        let mut time_duration_rx:f32;
-                        let mut total_duration_tx:f32;
-
-                        total_duration_tx = ordered_values.first().unwrap().tx_duration; 
-                        time_duration_rx = frame_interarrival; 
-
-                        // now that we have total tx_duration and rx_duration for whole frame, we compute the one way delay gradient (once)
-                        self.kalman.ow_delay =
-                        total_duration_tx - time_duration_rx; 
+                        if let Some(first_shard_stats) = inner_map.get(&0) {
+                            if let Some(prev_frame_tx_r_instant) = self.prev_frame_tx_r_instant {
+                                self.kalman.ow_delay = frame_interarrival
+                                    - (first_shard_stats.tx_r_instant - prev_frame_tx_r_instant);
+                            }
+                            self.prev_frame_tx_r_instant = Some(first_shard_stats.tx_r_instant);
+                        }
 
                         self.kalman.k_gain = (self.kalman.p_prev + Q_KALMAN)
-                            / (self.kalman.p_prev
-                                + Q_KALMAN
-                                + self.kalman.noise_estimation);
+                            / (self.kalman.p_prev + Q_KALMAN + self.kalman.noise_estimation); // (12)
 
-                        self.kalman.m_current = (1.0 - self.kalman.k_gain)
-                            * self.kalman.m_prev
-                            + self.kalman.k_gain * self.kalman.ow_delay;
+                        self.kalman.m_current = (1.0 - self.kalman.k_gain) * self.kalman.m_prev
+                            + self.kalman.k_gain * self.kalman.ow_delay; // (11)
 
                         self.kalman.residual_z = self.kalman.ow_delay - self.kalman.m_prev;
+
                         self.kalman.noise_estimation = (0.95 * self.kalman.noise_prev)
-                            + self.kalman.residual_z.powf(2.0) * 0.05;
+                            + self.kalman.residual_z.powf(2.0) * 0.05; // (16)
+
                         self.kalman.p_current =
-                            (1.0 - self.kalman.k_gain) * (self.kalman.p_prev + Q_KALMAN);
-                        self.kalman.abs_m = self.kalman.m_current.abs(); // absolute value in rust? ;
+                            (1.0 - self.kalman.k_gain) * (self.kalman.p_prev + Q_KALMAN); // (14)
 
                         self.kalman.p_prev = self.kalman.p_current;
                         self.kalman.m_prev = self.kalman.m_current;
                         self.kalman.noise_prev = self.kalman.noise_estimation;
 
-                        self.kalman.measured_delay += self.kalman.m_current;
-                        
-                        self.kalman.adaptive_threshold = self.kalman.adaptive_threshold_prev + time_duration_rx * self.kalman.k_threshold() * (f32::abs(self.kalman.m_current) - self.kalman.adaptive_threshold_prev);
-                        
-                        prev_instant_rx =  ordered_values.first().unwrap().rx_instant;
-                        self.kalman.adaptive_threshold_prev = self.kalman.adaptive_threshold; 
-                        
-                        self.kalman.state_gcc(); // change state of internal state machine. TODO: Add Delay-based controller logic
-                            }
+                        {
+                            self.kalman.abs_m = self.kalman.m_current.abs();
+
+                            self.kalman.measured_delay += self.kalman.m_current;
+
+                            self.kalman.adaptive_threshold = self.kalman.adaptive_threshold_prev
+                                + frame_interarrival
+                                    * self.kalman.k_threshold()
+                                    * (f32::abs(self.kalman.m_current)
+                                        - self.kalman.adaptive_threshold_prev);
+
+                            self.kalman.adaptive_threshold_prev = self.kalman.adaptive_threshold;
+
+                            self.kalman.state_gcc(); // change state of internal state machine. TODO: Add Delay-based controller logic
                         }
                     }
-                
-            
+                }
+            }
+
             let size = in_progress_packet.buffer_length;
             components
                 .packet_queue
@@ -1033,8 +1048,8 @@ impl StreamSocket {
                     frame_span: frame_span,
                     frame_interarrival: frame_interarrival,
 
-                    jitter_avg_frame: jitter_avg,
-                    filtered_ow_delay: self.kalman.m_current,
+                    interarrival_jitter: self.interarrival_jitter,
+                    ow_delay: self.kalman.ow_delay,
 
                     rx_bytes: self.rx_bytes,
                     bytes_in_frame: all_bytes_in_frame,
@@ -1045,10 +1060,9 @@ impl StreamSocket {
 
                     highest_rx_frame_index: self.highest_rx_frame_index,
                     highest_rx_shard_index: self.highest_rx_shard_index,
-                    
-                    threshold_gcc: self.kalman.adaptive_threshold  , 
-                    internal_state_gcc: self.kalman.state, 
 
+                    threshold_gcc: self.kalman.adaptive_threshold,
+                    internal_state_gcc: self.kalman.state,
                 })
                 .ok();
             if shard_recv_state_mut.stream_id == VIDEO {

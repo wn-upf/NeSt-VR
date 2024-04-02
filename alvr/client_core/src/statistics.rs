@@ -105,8 +105,8 @@ impl StatisticsManager {
             frame.client_stats.frame_span = video_stats.frame_span;
             frame.client_stats.frame_interarrival = video_stats.frame_interarrival;
 
-            frame.client_stats.jitter_avg_frame = video_stats.jitter_avg_frame;
-            frame.client_stats.filtered_ow_delay = video_stats.filtered_ow_delay;
+            frame.client_stats.interarrival_jitter = video_stats.interarrival_jitter;
+            frame.client_stats.ow_delay = video_stats.ow_delay;
 
             frame.client_stats.rx_bytes = video_stats.rx_bytes;
             frame.client_stats.bytes_in_frame = video_stats.bytes_in_frame;
