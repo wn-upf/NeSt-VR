@@ -1187,7 +1187,7 @@ pub fn session_settings_default() -> SettingsDefault {
             adapter_index: 0,
             transcoding_view_resolution: view_resolution.clone(),
             emulated_headset_view_resolution: view_resolution,
-            preferred_fps: 72.,
+            preferred_fps: 90.,
             max_buffering_frames: 2.0,
             buffering_history_weight: 0.90,
             optimize_game_render_latency: true,
@@ -1246,7 +1246,7 @@ pub fn session_settings_default() -> SettingsDefault {
                             content: 1E-4, 
                         },
                     }, 
-                    variant: BitrateModeDefaultVariant::ConstantMbps,
+                    variant: BitrateModeDefaultVariant::SimpleHeuristic,
                 },
                 adapt_to_framerate: SwitchDefault {
                     enabled: true,
@@ -1258,7 +1258,7 @@ pub fn session_settings_default() -> SettingsDefault {
                 image_corruption_fix: false,
             },
             preferred_codec: CodecTypeDefault {
-                variant: CodecTypeDefaultVariant::H264,
+                variant: CodecTypeDefaultVariant::Hevc,
             },
             encoder_config: EncoderConfigDefault {
                 gui_collapsed: true,
@@ -1622,7 +1622,7 @@ pub fn session_settings_default() -> SettingsDefault {
                     variant: LogSeverityDefaultVariant::Error,
                 },
             },
-            log_to_disk: cfg!(debug_assertions),
+            log_to_disk: true,
             log_button_presses: false,
             log_tracking: false,
             log_haptics: false,

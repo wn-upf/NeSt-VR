@@ -68,6 +68,7 @@ pub struct GraphStatistics {
 
     pub network_throughput_bps: f32,
     pub peak_network_throughput_bps: f32,
+    pub ema_peak_throughput: f32, 
     pub application_throughput_bps: f32,
 
     pub frames_dropped: u32,

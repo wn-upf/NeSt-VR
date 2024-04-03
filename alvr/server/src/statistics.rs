@@ -101,6 +101,9 @@ pub struct StatisticsManager {
 
     prev_highest_shard: i32,
     prev_highest_frame: i32,
+
+    ema_peak_throughput: f32,
+    last_peak_throughput_measure: Instant, 
 }
 
 impl StatisticsManager {
@@ -164,6 +167,8 @@ impl StatisticsManager {
 
             prev_highest_shard: -1,
             prev_highest_frame: 0,
+            ema_peak_throughput: 30_000_000.0, 
+            last_peak_throughput_measure: Instant::now(),
         }
     }
 
@@ -280,7 +285,7 @@ impl StatisticsManager {
 
     // Called every frame. Some statistics are reported once every frame
     // Returns network latency
-    pub fn report_statistics(&mut self, client_stats: ClientStatistics) -> (Duration, f32, f32, f32)  {
+    pub fn report_statistics(&mut self, client_stats: ClientStatistics) -> (Duration, f32)  {
         if let Some(frame) = self
             .stats_history_buffer
             .iter_mut()
@@ -450,6 +455,11 @@ impl StatisticsManager {
                 0.0
             };
 
+            let delta_peak_t = Instant::now() - self.last_peak_throughput_measure; 
+            let time_const = Duration::from_secs(5).as_secs_f32(); 
+            self.ema_peak_throughput = delta_peak_t.as_secs_f32()/time_const * peak_network_throughput_bps + (1.0 - delta_peak_t.as_secs_f32()/time_const) * self.ema_peak_throughput;
+                
+
             let application_throughput_bps = if client_stats.frame_interarrival != 0.0 {
                 client_stats.bytes_in_frame_app as f32 * 8.0 / client_stats.frame_interarrival
             } else {
@@ -534,6 +544,7 @@ impl StatisticsManager {
 
                 network_throughput_bps: network_throughput_bps,
                 peak_network_throughput_bps: peak_network_throughput_bps,
+                ema_peak_throughput: self.ema_peak_throughput, 
                 application_throughput_bps: application_throughput_bps,
 
                 frames_skipped: client_stats.frames_skipped,
@@ -547,9 +558,9 @@ impl StatisticsManager {
                 internal_state_gcc: client_stats.internal_state_gcc,
             }));
 
-            (network_latency, shards_lost as f32, client_stats.duplicated_shard_counter as f32, (client_stats.frames_skipped + client_stats.frames_dropped) as f32) //return tuple for BitrateManager in connection.rs
+            (network_latency, (client_stats.frames_skipped + client_stats.frames_dropped) as f32) //return tuple for BitrateManager in connection.rs
         } else {
-            (Duration::ZERO, 0.0, 0.0, 0.0) 
+            (Duration::ZERO,  0.0) 
         }
     }
 

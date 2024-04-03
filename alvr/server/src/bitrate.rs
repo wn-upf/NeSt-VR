@@ -29,7 +29,6 @@ pub struct BitrateManager {
     last_target_bitrate: f32,
     last_jitter: f32, //added for heuristic, needs to be reported from connection: TODO
     lost_frames: SlidingWindowAverage<f32>, //needs to be f32 to retrieve average frame loss as percentage
-    lost_shards: SlidingWindowAverage<f32>, // might be useful for next version of heuristic? 
 }
 
 impl BitrateManager {
@@ -59,7 +58,6 @@ impl BitrateManager {
             last_target_bitrate: 30_000_000.0,
             last_jitter: 0.0001,
             lost_frames: SlidingWindowAverage::new(0.0, max_history_size),
-            lost_shards: SlidingWindowAverage::new(30_000_000.0, max_history_size),
         }
     }
 
@@ -111,15 +109,13 @@ impl BitrateManager {
         timestamp: Duration,
         network_latency: Duration,
         decoder_latency: Duration,
-        lost_shards: f32, 
-        _dupe_shards: f32, 
+
         lost_frames: f32, 
     ) {
         if network_latency.is_zero() {
             return;
         }
         self.lost_frames.submit_sample(lost_frames);
-        self.lost_shards.submit_sample(lost_shards); 
         //we don't do nothing with duplicated shards atm 
 
         self.network_latency_average.submit_sample(network_latency);
@@ -227,7 +223,7 @@ impl BitrateManager {
                     if let Switch::Enabled(steps) = steps_mbps {
                         let frame_interval = self.frame_interval_average.get_average();
                         let framerate = 1.0 / frame_interval.as_secs_f32().min(1.0);
-
+                        
                         if frame_loss_avg < framerate * 0.05 {
                             // if the frame loss avg doesn't exceed the 5% of FPS mark:
                             if self.network_latency_average.get_average() >= frame_interval {

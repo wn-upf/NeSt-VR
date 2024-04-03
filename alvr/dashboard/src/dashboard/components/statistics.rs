@@ -305,7 +305,7 @@ impl StatisticsTab {
             ui,
             available_width,
             "Frame loss, Shard loss and Shards Duplicated Graph",
-            0.0..=80.0 as f32,
+            0.0..=20.0 as f32,
             |painter, to_screen_trans| {
                 let mut frameloss = Vec::with_capacity(GRAPH_HISTORY_SIZE);
                 let mut shardloss = Vec::with_capacity(GRAPH_HISTORY_SIZE);
@@ -424,18 +424,18 @@ impl StatisticsTab {
         let mut data = statistics::Data::new(
             self.history
                 .iter()
-                .map(|stats| stats.peak_network_throughput_bps as f64)
+                .map(|stats| stats.ema_peak_throughput as f64)
                 .collect::<Vec<_>>(),
         );
         self.draw_graph(
             ui,
             available_width,
             "Bitrate",
-            0.0..=(data.quantile(UPPER_QUANTILE) * 2.0) as f32 / 1e6,
+            0.0..=(data.quantile(UPPER_QUANTILE) * 1.5) as f32 / 1e6,
             |painter, to_screen_trans| {
                 
                 let mut network_throughput_bps: Vec<Pos2> = Vec::with_capacity(GRAPH_HISTORY_SIZE);
-                let mut peak_network_throughput_bps: Vec<Pos2> =
+                let mut ema_peak_throughput: Vec<Pos2> =
                     Vec::with_capacity(GRAPH_HISTORY_SIZE);
                 let mut application_throughput_bps: Vec<Pos2> =
                     Vec::with_capacity(GRAPH_HISTORY_SIZE);
@@ -449,8 +449,8 @@ impl StatisticsTab {
                     let value_nw = pointer_graphstatistics.network_throughput_bps;
                     network_throughput_bps.push(to_screen_trans * pos2(i as f32, value_nw / 1e6));
 
-                    let value_pk = pointer_graphstatistics.peak_network_throughput_bps;
-                    peak_network_throughput_bps
+                    let value_pk = pointer_graphstatistics.ema_peak_throughput;
+                    ema_peak_throughput
                         .push(to_screen_trans * pos2(i as f32, value_pk / 1e6));
 
                     let value_app = pointer_graphstatistics.application_throughput_bps;
@@ -460,7 +460,7 @@ impl StatisticsTab {
                 }
 
                 draw_lines(painter, network_throughput_bps, Color32::LIGHT_BLUE);
-                draw_lines(painter, peak_network_throughput_bps, Color32::LIGHT_RED);
+                draw_lines(painter, ema_peak_throughput, Color32::LIGHT_RED);
                 draw_lines(painter, application_throughput_bps, Color32::GREEN);
             },
             |ui, stats| {
