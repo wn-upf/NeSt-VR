@@ -1,4 +1,4 @@
-use alvr_common::SlidingWindowAverage;
+use alvr_common::{warn, SlidingWindowAverage};
 use alvr_packets::ClientStatistics;
 use std::{
     collections::VecDeque,
@@ -60,7 +60,7 @@ impl StatisticsManager {
                 video_packet_received: Instant::now(),
                 client_stats: ClientStatistics {
                     target_timestamp,
-                    frame_index: 0,
+                    frame_index: -1,
                     ..Default::default()
                 },
                 is_decoded: false,
@@ -190,6 +190,7 @@ impl StatisticsManager {
                 // accumulate the metrics when frames are dropped after decoding
                 self.stats_history_buffer.retain(|frame_dropped| {
                     if frame_dropped.client_stats.target_timestamp < target_timestamp {
+                        warn!("Dropped video packet {}. Reason: Maximum decoded frames buffering achieved", frame_dropped.client_stats.frame_index);
                         frame_client_stats_clone.frame_interarrival +=
                             frame_dropped.client_stats.frame_interarrival;
                         frame_client_stats_clone.rx_bytes += frame_dropped.client_stats.rx_bytes;

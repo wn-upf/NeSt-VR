@@ -399,7 +399,7 @@ fn connection_pipeline(
                         data.get_frame_index()
                     )
                 } else {
-                    //case where frame is decoded correctly
+                    // case where frame is decoded correctly
                     if let Some(stats) = &mut *STATISTICS_MANAGER.lock() {
                         stats.report_video_statistics(header.timestamp, videoStats);
                     }
