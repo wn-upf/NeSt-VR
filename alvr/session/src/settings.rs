@@ -313,7 +313,7 @@ pub enum BitrateMode {
         #[schema(gui(slider(min = 1.0, max = 100.0, logarithmic)))]
         steps_mbps: Switch<f32>, 
 
-        #[schema(strings(display_name = "Steps of heuristic in mbps"))]
+        #[schema(strings(display_name = "Threshold of Jitter"))]
         #[schema(flag = "real-time")]
         #[schema(gui(slider(min = 0.0, max = 0.01, logarithmic)))]
         threshold_jitter: Switch<f32>,
