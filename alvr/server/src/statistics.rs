@@ -94,7 +94,8 @@ pub struct StatisticsManager {
 
     frame_interval: Duration,
 
-    frame_interarrival_average: SlidingWindowAverage<f32>,
+    frame_interarrival_average: SlidingWindowAverage<f32>,  
+    frame_interarrival_last_std: f32, 
 
     stats_history_buffer: VecDeque<HistoryFrame>,
     map_frames_spf: HashMap<u32, usize>,
@@ -104,6 +105,7 @@ pub struct StatisticsManager {
 
     ema_peak_throughput: f32,
     last_peak_throughput_measure: Instant, 
+    
 }
 
 impl StatisticsManager {
@@ -161,6 +163,7 @@ impl StatisticsManager {
             frame_interval: nominal_server_frame_interval,
 
             frame_interarrival_average: SlidingWindowAverage::new(0., max_history_size),
+            frame_interarrival_last_std: 0., 
 
             stats_history_buffer: VecDeque::new(),
             map_frames_spf: HashMap::new(),
@@ -285,7 +288,7 @@ impl StatisticsManager {
 
     // Called every frame. Some statistics are reported once every frame
     // Returns network latency
-    pub fn report_statistics(&mut self, client_stats: ClientStatistics) -> (Duration, f32)  {
+    pub fn report_statistics(&mut self, client_stats: ClientStatistics) -> (Duration, f32, f32)  {
         if let Some(frame) = self
             .stats_history_buffer
             .iter_mut()
@@ -357,6 +360,8 @@ impl StatisticsManager {
 
             self.frame_interarrival_average
                 .submit_sample(client_stats.frame_interarrival);
+            
+            self.frame_interarrival_last_std = self.frame_interarrival_average.get_std() * 1000.;
 
             if self.last_full_report_instant + FULL_REPORT_INTERVAL < Instant::now() {
                 self.last_full_report_instant += FULL_REPORT_INTERVAL;
@@ -407,7 +412,7 @@ impl StatisticsManager {
                         .get_average()
                         .as_secs_f32()
                         * 1000.,
-                    frame_jitter_ms: self.frame_interarrival_average.get_std() * 1000.,
+                    frame_jitter_ms: self.frame_interarrival_last_std,
                     packets_lost_total: self.packets_lost_total,
                     packets_lost_per_sec: (self.packets_lost_partial_sum as f32 / interval_secs)
                         as _,
@@ -540,6 +545,7 @@ impl StatisticsManager {
                 frame_interarrival_s: client_stats.frame_interarrival,
 
                 interarrival_jitter: client_stats.interarrival_jitter,
+                frame_interarrival_last_std: self.frame_interarrival_last_std, 
                 ow_delay: client_stats.ow_delay,
 
                 network_throughput_bps: network_throughput_bps,
@@ -558,9 +564,9 @@ impl StatisticsManager {
                 internal_state_gcc: client_stats.internal_state_gcc,
             }));
 
-            (network_latency, (client_stats.frames_skipped + client_stats.frames_dropped) as f32) //return tuple for BitrateManager in connection.rs
+            (network_latency, (client_stats.frames_skipped + client_stats.frames_dropped) as f32,  self.frame_interarrival_last_std) //return tuple for BitrateManager in connection.rs
         } else {
-            (Duration::ZERO,  0.0) 
+            (Duration::ZERO,  0.0, 0.0) 
         }
     }
 

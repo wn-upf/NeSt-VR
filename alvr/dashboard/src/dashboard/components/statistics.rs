@@ -245,6 +245,7 @@ impl StatisticsTab {
                 let mut interarrival_jitter = Vec::with_capacity(GRAPH_HISTORY_SIZE);
                 let mut ow_delay = Vec::with_capacity(GRAPH_HISTORY_SIZE);
                 let mut threshold_gcc = Vec::with_capacity(GRAPH_HISTORY_SIZE);
+                let mut frame_interarrival_last_std = Vec::with_capacity(GRAPH_HISTORY_SIZE);
 
                 for i in 0..GRAPH_HISTORY_SIZE {
                     let pointer_graphstatistics = &self.history[i];
@@ -258,10 +259,14 @@ impl StatisticsTab {
 
                     let value_thr = pointer_graphstatistics.threshold_gcc;
                     threshold_gcc.push(to_screen_trans * pos2(i as f32, value_thr));
+
+                    let val_std = pointer_graphstatistics.frame_interarrival_last_std;
+                    frame_interarrival_last_std.push(to_screen_trans * pos2(i as f32, val_std));
                 }
                 draw_lines(painter, interarrival_jitter, Color32::RED);
                 draw_lines(painter, ow_delay, Color32::BLUE);
                 draw_lines(painter, threshold_gcc, Color32::GOLD);
+                draw_lines(painter, frame_interarrival_last_std, Color32::LIGHT_YELLOW); 
             },
             |ui, stats| {
                 fn maybe_label(
@@ -281,19 +286,25 @@ impl StatisticsTab {
                     ui,
                     "Jitter Average",
                     Some(graphstats.interarrival_jitter),
-                    Color32::DARK_BLUE,
+                    Color32::WHITE,
                 );
                 maybe_label(
                     ui,
                     "Filtered OW Delay",
                     Some(graphstats.ow_delay),
-                    Color32::DARK_GREEN,
+                    Color32::GRAY,
                 );
                 maybe_label(
                     ui,
                     "Threshold from GCC",
                     Some(graphstats.threshold_gcc),
                     Color32::LIGHT_BLUE,
+                );
+                maybe_label(
+                    ui,
+                    "Frame interarrival std dev.",
+                    Some(graphstats.frame_interarrival_last_std),
+                    Color32::GRAY,
                 );
             },
         )

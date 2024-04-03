@@ -29,6 +29,7 @@ pub struct BitrateManager {
     last_target_bitrate: f32,
     last_jitter: f32, //added for heuristic, needs to be reported from connection: TODO
     lost_frames: SlidingWindowAverage<f32>, //needs to be f32 to retrieve average frame loss as percentage
+    frame_interarrival_last_std: f32, 
 }
 
 impl BitrateManager {
@@ -58,6 +59,7 @@ impl BitrateManager {
             last_target_bitrate: 30_000_000.0,
             last_jitter: 0.0001,
             lost_frames: SlidingWindowAverage::new(0.0, max_history_size),
+            frame_interarrival_last_std: 0.0, 
         }
     }
 
@@ -111,12 +113,14 @@ impl BitrateManager {
         decoder_latency: Duration,
 
         lost_frames: f32, 
+        frame_interarrival_last_std: f32, 
     ) {
         if network_latency.is_zero() {
             return;
         }
         self.lost_frames.submit_sample(lost_frames);
         //we don't do nothing with duplicated shards atm 
+        self.frame_interarrival_last_std = frame_interarrival_last_std; 
 
         self.network_latency_average.submit_sample(network_latency);
 
@@ -228,7 +232,7 @@ impl BitrateManager {
                             // if the frame loss avg doesn't exceed the 5% of FPS mark:
                             if self.network_latency_average.get_average() >= frame_interval {
                                 // if the avg. latency surpasses 1/fps
-                                if self.last_jitter >= *threshold {
+                                if self.frame_interarrival_last_std >= *threshold {
                                     bitrate_bps = bitrate_bps - *steps; //decrease bitrate by 1 step
                                     bitrate_bps = minmax_bitrate(
                                         bitrate_bps,
@@ -243,7 +247,7 @@ impl BitrateManager {
                                     ); //keep as is, minmax for robustness
                                 }
                             } else {
-                                if self.last_jitter <= *threshold {
+                                if self.frame_interarrival_last_std <= *threshold {
                                     bitrate_bps = bitrate_bps + *steps; //increase bitrate by 1 step
                                     bitrate_bps = minmax_bitrate(
                                         bitrate_bps,
