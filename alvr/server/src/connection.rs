@@ -900,15 +900,23 @@ fn connection_pipeline(
                 if let Some(stats) = &mut *STATISTICS_MANAGER.lock() {
                     let timestamp = client_stats.target_timestamp;
                     let decoder_latency = client_stats.video_decode;
-                    let network_latency = stats.report_statistics(client_stats);
+                    let (network_latency, shard_loss, shard_dups, frame_loss) = stats.report_statistics(client_stats);
+
 
                     let server_data_lock = SERVER_DATA_MANAGER.read();
+                    
+                    
+                    // let shard_loss = ? ; /// need to compute here or borrow from stats.report_statistics
+                    
                     BITRATE_MANAGER.lock().report_frame_latencies(
                         &server_data_lock.settings().video.bitrate.mode,
                         timestamp,
                         network_latency,
                         decoder_latency,
-                    );
+                        shard_loss,
+                        shard_dups,
+                        frame_loss
+                        );
                 }
             }
         }

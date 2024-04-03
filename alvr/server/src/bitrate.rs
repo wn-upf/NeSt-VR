@@ -29,7 +29,7 @@ pub struct BitrateManager {
     last_target_bitrate: f32,
     last_jitter: f32, //added for heuristic, needs to be reported from connection: TODO
     lost_frames: SlidingWindowAverage<f32>, //needs to be f32 to retrieve average frame loss as percentage
-    lost_shards: SlidingWindowAverage<f32>,
+    lost_shards: SlidingWindowAverage<f32>, // might be useful for next version of heuristic? 
 }
 
 impl BitrateManager {
@@ -87,9 +87,6 @@ impl BitrateManager {
         } else {
             //handle the case where setting is not on, framerate can still be useful
             // to keep track of FPS for heuristic, although not doing the update_needed part
-            let interval_ratio =
-                interval.as_secs_f32() / self.frame_interval_average.get_average().as_secs_f32();
-
             self.frame_interval_average.submit_sample(interval);
         }
     }
@@ -114,10 +111,16 @@ impl BitrateManager {
         timestamp: Duration,
         network_latency: Duration,
         decoder_latency: Duration,
+        lost_shards: f32, 
+        _dupe_shards: f32, 
+        lost_frames: f32, 
     ) {
         if network_latency.is_zero() {
             return;
         }
+        self.lost_frames.submit_sample(lost_frames);
+        self.lost_shards.submit_sample(lost_shards); 
+        //we don't do nothing with duplicated shards atm 
 
         self.network_latency_average.submit_sample(network_latency);
 

@@ -50,6 +50,7 @@ impl StatisticsTab {
                 self.draw_latency_graph(ui, available_width);
                 self.draw_fps_graph(ui, available_width);
                 self.draw_bitrate_graph(ui, available_width);
+                self.draw_3throughput_graphs(ui, available_width);
                 self.draw_statistics_overview(ui, stats);
                 self.draw_jitter(ui, available_width);
                 self.draw_frameloss(ui, available_width);
@@ -227,18 +228,19 @@ impl StatisticsTab {
             },
         );
     }
+    
     fn draw_jitter(&self, ui: &mut Ui, available_width: f32) {
         let mut data = statistics::Data::new(
             self.history
                 .iter()
-                .map(|stats| stats.interarrival_jitter as f64)
+                .map(|stats| stats.ow_delay as f64)
                 .collect::<Vec<_>>(),
         );
         self.draw_graph(
             ui,
             available_width,
             "Jitter Graph",
-            0.0..=(data.quantile(UPPER_QUANTILE) * 2.0) as f32,
+            0.0..=(data.quantile(UPPER_QUANTILE) * 5.0) as f32,
             |painter, to_screen_trans| {
                 let mut interarrival_jitter = Vec::with_capacity(GRAPH_HISTORY_SIZE);
                 let mut ow_delay = Vec::with_capacity(GRAPH_HISTORY_SIZE);
@@ -257,9 +259,9 @@ impl StatisticsTab {
                     let value_thr = pointer_graphstatistics.threshold_gcc;
                     threshold_gcc.push(to_screen_trans * pos2(i as f32, value_thr));
                 }
-                draw_lines(painter, interarrival_jitter, Color32::GRAY);
-                draw_lines(painter, ow_delay, graph_colors::TRANSCODE);
-                draw_lines(painter, threshold_gcc, graph_colors::NETWORK);
+                draw_lines(painter, interarrival_jitter, Color32::RED);
+                draw_lines(painter, ow_delay, Color32::BLUE);
+                draw_lines(painter, threshold_gcc, Color32::GOLD);
             },
             |ui, stats| {
                 fn maybe_label(
@@ -298,17 +300,12 @@ impl StatisticsTab {
     }
 
     fn draw_frameloss(&self, ui: &mut Ui, available_width: f32) {
-        let mut data = statistics::Data::new(
-            self.history
-                .iter()
-                .map(|stats| stats.shards_lost as f64)
-                .collect::<Vec<_>>(),
-        );
+        
         self.draw_graph(
             ui,
             available_width,
             "Frame loss, Shard loss and Shards Duplicated Graph",
-            0.0..=(data.quantile(UPPER_QUANTILE) * 2.0) as f32,
+            0.0..=80.0 as f32,
             |painter, to_screen_trans| {
                 let mut frameloss = Vec::with_capacity(GRAPH_HISTORY_SIZE);
                 let mut shardloss = Vec::with_capacity(GRAPH_HISTORY_SIZE);
@@ -342,9 +339,7 @@ impl StatisticsTab {
                         ui.colored_label(color, &format!("{text}: {:.0} ", value));
                     }
                 }
-
                 let graphstats = stats;
-
                 maybe_label(
                     ui,
                     "Frame Loss",
@@ -371,7 +366,7 @@ impl StatisticsTab {
         let mut data = statistics::Data::new(
             self.history
                 .iter()
-                .map(|stats| stats.frame_span_s as f64)
+                .map(|stats| stats.frame_interarrival_s as f64)
                 .collect::<Vec<_>>(),
         );
         self.draw_graph(
@@ -393,8 +388,8 @@ impl StatisticsTab {
                     frame_interarrival.push(to_screen_trans * pos2(i as f32, fi as f32));
                 }
 
-                draw_lines(painter, frame_span, Color32::GRAY);
-                draw_lines(painter, frame_interarrival, graph_colors::TRANSCODE);
+                draw_lines(painter, frame_span, Color32::LIGHT_BLUE);
+                draw_lines(painter, frame_interarrival, Color32::LIGHT_RED);
             },
             |ui, stats| {
                 fn maybe_label(
@@ -425,6 +420,87 @@ impl StatisticsTab {
         )
     }
 
+    fn draw_3throughput_graphs(&self, ui: &mut Ui, available_width: f32) {
+        let mut data = statistics::Data::new(
+            self.history
+                .iter()
+                .map(|stats| stats.peak_network_throughput_bps as f64)
+                .collect::<Vec<_>>(),
+        );
+        self.draw_graph(
+            ui,
+            available_width,
+            "Bitrate",
+            0.0..=(data.quantile(UPPER_QUANTILE) * 2.0) as f32 / 1e6,
+            |painter, to_screen_trans| {
+                
+                let mut network_throughput_bps: Vec<Pos2> = Vec::with_capacity(GRAPH_HISTORY_SIZE);
+                let mut peak_network_throughput_bps: Vec<Pos2> =
+                    Vec::with_capacity(GRAPH_HISTORY_SIZE);
+                let mut application_throughput_bps: Vec<Pos2> =
+                    Vec::with_capacity(GRAPH_HISTORY_SIZE);
+
+                for i in 0..GRAPH_HISTORY_SIZE {
+
+                    let pointer_graphstatistics = &self.history[i];
+
+                    // new stats
+
+                    let value_nw = pointer_graphstatistics.network_throughput_bps;
+                    network_throughput_bps.push(to_screen_trans * pos2(i as f32, value_nw / 1e6));
+
+                    let value_pk = pointer_graphstatistics.peak_network_throughput_bps;
+                    peak_network_throughput_bps
+                        .push(to_screen_trans * pos2(i as f32, value_pk / 1e6));
+
+                    let value_app = pointer_graphstatistics.application_throughput_bps;
+                    application_throughput_bps
+                        .push(to_screen_trans * pos2(i as f32, value_app / 1e6));
+
+                }
+
+                draw_lines(painter, network_throughput_bps, Color32::LIGHT_BLUE);
+                draw_lines(painter, peak_network_throughput_bps, Color32::LIGHT_RED);
+                draw_lines(painter, application_throughput_bps, Color32::GREEN);
+            },
+            |ui, stats| {
+                fn maybe_label(
+                    ui: &mut Ui,
+                    text: &str,
+                    maybe_value_bps: Option<f32>,
+                    color: Color32,
+                ) {
+                    if let Some(value) = maybe_value_bps {
+                        ui.colored_label(color, &format!("{text}: {:.2} Mbps", value / 1e6));
+                    }
+                }
+                let graphstats = stats;
+
+               
+                maybe_label(
+                    ui,
+                    "Network Throughput",
+                    Some(graphstats.network_throughput_bps),
+                    Color32::LIGHT_BLUE,
+                );
+                maybe_label(
+                    ui,
+                    "Peak Throughput",
+                    Some(graphstats.peak_network_throughput_bps),
+                    Color32::LIGHT_RED,
+                );
+                maybe_label(
+                    ui,
+                    "Application Throughput",
+                    Some(graphstats.application_throughput_bps),
+                    Color32::GREEN,
+                );
+            },
+        )
+    }
+
+
+
     fn draw_bitrate_graph(&self, ui: &mut Ui, available_width: f32) {
         let mut data = statistics::Data::new(
             self.history
@@ -446,16 +522,12 @@ impl StatisticsTab {
                 let mut manual_min = Vec::with_capacity(GRAPH_HISTORY_SIZE);
                 let mut requested = Vec::with_capacity(GRAPH_HISTORY_SIZE);
                 let mut actual = Vec::with_capacity(GRAPH_HISTORY_SIZE);
-                let mut network_throughput_bps: Vec<Pos2> = Vec::with_capacity(GRAPH_HISTORY_SIZE);
-                let mut peak_network_throughput_bps: Vec<Pos2> =
-                    Vec::with_capacity(GRAPH_HISTORY_SIZE);
-                let mut application_throughput_bps: Vec<Pos2> =
-                    Vec::with_capacity(GRAPH_HISTORY_SIZE);
+                
 
                 for i in 0..GRAPH_HISTORY_SIZE {
                     let nom_br = &self.history[i].nominal_bitrate;
 
-                    let pointer_graphstatistics = &self.history[i];
+                    
 
                     if let Some(value) = nom_br.scaled_calculated_bps {
                         scaled_calculated.push(to_screen_trans * pos2(i as f32, value / 1e6))
@@ -476,19 +548,6 @@ impl StatisticsTab {
                         manual_min.push(to_screen_trans * pos2(i as f32, value / 1e6))
                     }
 
-                    // new stats
-
-                    let value_nw = pointer_graphstatistics.network_throughput_bps;
-                    network_throughput_bps.push(to_screen_trans * pos2(i as f32, value_nw / 1e6));
-
-                    let value_pk = pointer_graphstatistics.peak_network_throughput_bps;
-                    peak_network_throughput_bps
-                        .push(to_screen_trans * pos2(i as f32, value_pk / 1e6));
-
-                    let value_app = pointer_graphstatistics.application_throughput_bps;
-                    application_throughput_bps
-                        .push(to_screen_trans * pos2(i as f32, value_app / 1e6));
-
                     requested.push(to_screen_trans * pos2(i as f32, nom_br.requested_bps / 1e6));
                     actual.push(
                         to_screen_trans * pos2(i as f32, self.history[i].actual_bitrate_bps / 1e6),
@@ -504,9 +563,6 @@ impl StatisticsTab {
                 draw_lines(painter, requested, theme::OK_GREEN);
                 draw_lines(painter, actual, theme::FG);
 
-                draw_lines(painter, network_throughput_bps, theme::ACCENT);
-                draw_lines(painter, peak_network_throughput_bps, theme::DARKER_BG);
-                draw_lines(painter, application_throughput_bps, theme::SEPARATOR_BG);
             },
             |ui, stats| {
                 fn maybe_label(
@@ -521,7 +577,6 @@ impl StatisticsTab {
                 }
 
                 let n = &stats.nominal_bitrate;
-                let graphstats = stats;
 
                 maybe_label(
                     ui,
@@ -556,24 +611,7 @@ impl StatisticsTab {
                     Some(stats.actual_bitrate_bps),
                     theme::FG,
                 );
-                maybe_label(
-                    ui,
-                    "Network Throughput",
-                    Some(graphstats.network_throughput_bps),
-                    Color32::DARK_BLUE,
-                );
-                maybe_label(
-                    ui,
-                    "Peak Throughput",
-                    Some(graphstats.peak_network_throughput_bps),
-                    Color32::DARK_GREEN,
-                );
-                maybe_label(
-                    ui,
-                    "Application Throughput",
-                    Some(graphstats.application_throughput_bps),
-                    Color32::LIGHT_BLUE,
-                );
+
             },
         )
     }

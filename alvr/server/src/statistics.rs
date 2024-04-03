@@ -280,7 +280,7 @@ impl StatisticsManager {
 
     // Called every frame. Some statistics are reported once every frame
     // Returns network latency
-    pub fn report_statistics(&mut self, client_stats: ClientStatistics) -> Duration {
+    pub fn report_statistics(&mut self, client_stats: ClientStatistics) -> (Duration, f32, f32, f32)  {
         if let Some(frame) = self
             .stats_history_buffer
             .iter_mut()
@@ -547,9 +547,9 @@ impl StatisticsManager {
                 internal_state_gcc: client_stats.internal_state_gcc,
             }));
 
-            network_latency
+            (network_latency, shards_lost as f32, client_stats.duplicated_shard_counter as f32, (client_stats.frames_skipped + client_stats.frames_dropped) as f32) //return tuple for BitrateManager in connection.rs
         } else {
-            Duration::ZERO
+            (Duration::ZERO, 0.0, 0.0, 0.0) 
         }
     }
 

@@ -349,7 +349,6 @@ fn connection_pipeline(
             };
 
             videoStats.frame_index = data.get_frame_index();
-
             videoStats.frame_span = data.get_frame_span();
             videoStats.interarrival_jitter = data.get_interarrival_jitter();
             videoStats.ow_delay = data.get_ow_delay();
