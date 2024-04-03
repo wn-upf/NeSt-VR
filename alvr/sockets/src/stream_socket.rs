@@ -869,35 +869,18 @@ impl StreamSocket {
             let idx = *components.in_progress_packets.iter().next()?.0;
             Some(components.in_progress_packets.remove(&idx).unwrap().buffer)
         }) {
-            if let Some(rx_shards_current) = components
-                .in_progress_packets
-                .get_mut(&shard_recv_state_mut.packet_index)
-            {
-                if !(rx_shards_current
-                    .received_shard_indices
-                    .contains(&shard_recv_state_mut.shard_index))
-                {
-                    if shard_recv_state_mut.stream_id == VIDEO {
-                        self.rx_shard_counter += 1;
-                    }
-                    // NB: Can't use entry pattern because we want to allow bailing out on the line above
-                    components.in_progress_packets.insert(
-                        shard_recv_state_mut.packet_index,
-                        InProgressPacket {
-                            buffer,
-                            buffer_length: 0,
-                            // todo: find a way to skipping this allocation
-                            received_shard_indices: HashSet::with_capacity(
-                                shard_recv_state_mut.shards_count,
-                            ),
-                        },
-                    );
-                } else {
-                    if shard_recv_state_mut.stream_id == VIDEO {
-                        self.duplicated_shard_counter += 1;
-                    }
-                }
-            }
+            // NB: Can't use entry pattern because we want to allow bailing out on the line above
+            components.in_progress_packets.insert(
+                shard_recv_state_mut.packet_index,
+                InProgressPacket {
+                    buffer,
+                    buffer_length: 0,
+                    // todo: find a way to skipping this allocation
+                    received_shard_indices: HashSet::with_capacity(
+                        shard_recv_state_mut.shards_count,
+                    ),
+                },
+            );
             components
                 .in_progress_packets
                 .get_mut(&shard_recv_state_mut.packet_index)
@@ -911,6 +894,19 @@ impl StreamSocket {
 
             &mut components.discarded_shards_sink
         };
+
+        if !in_progress_packet
+            .received_shard_indices
+            .contains(&shard_recv_state_mut.shard_index)
+        {
+            if shard_recv_state_mut.stream_id == VIDEO {
+                self.rx_shard_counter += 1;
+            }
+        } else {
+            if shard_recv_state_mut.stream_id == VIDEO {
+                self.duplicated_shard_counter += 1;
+            }
+        }
 
         let max_shard_data_size = self.max_packet_size - SHARD_PREFIX_SIZE;
         // Note: there is no prefix offset, since we want to write the prefix too.
@@ -1001,6 +997,7 @@ impl StreamSocket {
                             }
                             self.prev_frame_tx_r_instant = Some(first_shard_stats.tx_r_instant);
                         }
+                        // Kalman filter
                         {
                             self.kalman.k_gain = (self.kalman.p_prev + Q_KALMAN)
                                 / (self.kalman.p_prev + Q_KALMAN + self.kalman.noise_estimation);
