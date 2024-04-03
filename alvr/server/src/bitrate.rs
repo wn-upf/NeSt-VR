@@ -230,7 +230,7 @@ impl BitrateManager {
 
                         if frame_loss_avg < framerate * 0.05 {
                             // if the frame loss avg doesn't exceed the 5% of FPS mark:
-                            if self.network_latency_average.get_average() >= frame_interval {
+                            if self.network_latency_average.get_average() > frame_interval {
                                 // if the avg. latency surpasses 1/fps
                                 if self.frame_interarrival_last_std >= *threshold {
                                     bitrate_bps = bitrate_bps - *steps; //decrease bitrate by 1 step
