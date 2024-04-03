@@ -457,9 +457,9 @@ impl StatisticsManager {
 
             let delta_peak_t = Instant::now() - self.last_peak_throughput_measure; 
             let time_const = Duration::from_secs(5).as_secs_f32(); 
-            self.ema_peak_throughput = delta_peak_t.as_secs_f32()/time_const * peak_network_throughput_bps + (1.0 - delta_peak_t.as_secs_f32()/time_const) * self.ema_peak_throughput;
-                
-
+            self.ema_peak_throughput = delta_peak_t.as_secs_f32()/time_const * peak_network_throughput_bps + (1.0 - delta_peak_t.as_secs_f32()/time_const) * self.ema_peak_throughput;        
+            self.last_peak_throughput_measure = Instant::now();
+        
             let application_throughput_bps = if client_stats.frame_interarrival != 0.0 {
                 client_stats.bytes_in_frame_app as f32 * 8.0 / client_stats.frame_interarrival
             } else {

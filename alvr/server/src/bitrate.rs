@@ -223,7 +223,7 @@ impl BitrateManager {
                     if let Switch::Enabled(steps) = steps_mbps {
                         let frame_interval = self.frame_interval_average.get_average();
                         let framerate = 1.0 / frame_interval.as_secs_f32().min(1.0);
-                        
+
                         if frame_loss_avg < framerate * 0.05 {
                             // if the frame loss avg doesn't exceed the 5% of FPS mark:
                             if self.network_latency_average.get_average() >= frame_interval {
@@ -268,10 +268,12 @@ impl BitrateManager {
                 }
                 self.last_target_bitrate = bitrate_bps;
                 if let Switch::Enabled(max) = max_bitrate_mbps {
-                    stats.manual_max_bps = Some(*max);
+                    let maxi = *max as f32 * 1e6; 
+                    stats.manual_max_bps = Some(maxi);
                 }
                 if let Switch::Enabled(min) = min_bitrate_mbps {
-                    stats.manual_min_bps = Some(*min);
+                    let mini = *min as f32 * 1e6;
+                    stats.manual_min_bps = Some(mini);
                 }
                 bitrate_bps
             }

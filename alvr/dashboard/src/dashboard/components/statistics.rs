@@ -14,7 +14,7 @@ use std::{collections::VecDeque, ops::RangeInclusive};
 
 const GRAPH_HISTORY_SIZE: usize = 1000;
 const UPPER_QUANTILE: f64 = 0.90;
-
+const MIDDLE_QUANTILE:f64 = 0.4;
 fn draw_lines(painter: &Painter, points: Vec<Pos2>, color: Color32) {
     painter.add(Shape::line(points, Stroke::new(1.0, color)));
 }
@@ -131,7 +131,7 @@ impl StatisticsTab {
             ui,
             available_width,
             "Latency",
-            0.0..=(data.quantile(UPPER_QUANTILE) * 1.2) as f32 * 1000.0,
+            0.0..=(data.quantile(UPPER_QUANTILE)) as f32 * 1000.0,
             |painter, to_screen_trans| {
                 for i in 0..GRAPH_HISTORY_SIZE {
                     let stats = self.history.get(i).unwrap();
@@ -430,12 +430,12 @@ impl StatisticsTab {
         self.draw_graph(
             ui,
             available_width,
-            "Bitrate",
-            0.0..=(data.quantile(UPPER_QUANTILE) * 1.5) as f32 / 1e6,
+            "Throughput Peak, Application and Network",
+            0.0..=(data.quantile(MIDDLE_QUANTILE) ) as f32 / 1e6,
             |painter, to_screen_trans| {
                 
                 let mut network_throughput_bps: Vec<Pos2> = Vec::with_capacity(GRAPH_HISTORY_SIZE);
-                let mut ema_peak_throughput: Vec<Pos2> =
+                let mut peak_network_throughput_bps: Vec<Pos2> =
                     Vec::with_capacity(GRAPH_HISTORY_SIZE);
                 let mut application_throughput_bps: Vec<Pos2> =
                     Vec::with_capacity(GRAPH_HISTORY_SIZE);
@@ -450,17 +450,16 @@ impl StatisticsTab {
                     network_throughput_bps.push(to_screen_trans * pos2(i as f32, value_nw / 1e6));
 
                     let value_pk = pointer_graphstatistics.ema_peak_throughput;
-                    ema_peak_throughput
+                    peak_network_throughput_bps
                         .push(to_screen_trans * pos2(i as f32, value_pk / 1e6));
 
                     let value_app = pointer_graphstatistics.application_throughput_bps;
                     application_throughput_bps
                         .push(to_screen_trans * pos2(i as f32, value_app / 1e6));
-
                 }
 
                 draw_lines(painter, network_throughput_bps, Color32::LIGHT_BLUE);
-                draw_lines(painter, ema_peak_throughput, Color32::LIGHT_RED);
+                draw_lines(painter, peak_network_throughput_bps, Color32::LIGHT_RED);
                 draw_lines(painter, application_throughput_bps, Color32::GREEN);
             },
             |ui, stats| {
@@ -486,7 +485,7 @@ impl StatisticsTab {
                 maybe_label(
                     ui,
                     "Peak Throughput",
-                    Some(graphstats.peak_network_throughput_bps),
+                    Some(graphstats.ema_peak_throughput),
                     Color32::LIGHT_RED,
                 );
                 maybe_label(
