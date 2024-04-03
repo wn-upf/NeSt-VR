@@ -575,13 +575,13 @@ fn connection_pipeline(
                     .get_range_mut(0, payload.len())
                     .copy_from_slice(&payload);
                 video_sender.send(buffer).ok();
-                
+
                 let frame_index = video_sender.get_last_packet_id();
                 let shards_count = video_sender.get_shards_count();
 
                 if let Some(stats) = &mut *STATISTICS_MANAGER.lock() {
-                    stats.report_frame_sent(header.timestamp, frame_index, shards_count);                }
-
+                    stats.report_frame_sent(header.timestamp, frame_index, shards_count);
+                }
             }
         }
     });
@@ -1003,10 +1003,6 @@ fn connection_pipeline(
                         unsafe { crate::RequestIDR() }
                     }
                     ClientControlPacket::VideoErrorReport => {
-                        // legacy endpoint. todo: remove
-                        if let Some(stats) = &mut *STATISTICS_MANAGER.lock() {
-                            stats.report_packet_loss();
-                        }
                         unsafe { crate::VideoErrorReportReceive() };
                     }
                     ClientControlPacket::ViewsConfig(config) => unsafe {

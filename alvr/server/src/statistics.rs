@@ -7,17 +7,21 @@ use std::{
 };
 
 const FULL_REPORT_INTERVAL: Duration = Duration::from_millis(500);
+
 #[derive(Clone)]
 pub struct HistoryFrame {
     target_timestamp: Duration,
+
     tracking_received: Instant,
     frame_present: Instant,
     frame_composed: Instant,
     frame_encoded: Instant,
     video_packet_bytes: usize,
     total_pipeline_latency: Duration,
+
     frame_index: i32,
     is_idr: bool,
+
     is_composed: bool,
     is_encoded: bool,
 }
@@ -27,16 +31,19 @@ impl Default for HistoryFrame {
         let now = Instant::now();
         Self {
             target_timestamp: Duration::ZERO,
+
             tracking_received: now,
             frame_present: now,
             frame_composed: now,
             frame_encoded: now,
             video_packet_bytes: 0,
             total_pipeline_latency: Duration::ZERO,
+
             frame_index: -1,
             is_idr: false,
+
             is_composed: false,
-            is_encoded: false, 
+            is_encoded: false,
         }
     }
 }
@@ -50,24 +57,48 @@ struct BatteryData {
 pub struct StatisticsManager {
     history_buffer: VecDeque<HistoryFrame>,
     max_history_size: usize,
+
     last_full_report_instant: Instant,
+    last_nominal_bitrate_stats: NominalBitrateStats,
+
     last_frame_present_instant: Instant,
     last_frame_present_interval: Duration,
+
+    last_vsync_time: Instant,
+
     video_packets_total: usize,
     video_packets_partial_sum: usize,
+
     video_bytes_total: usize,
     video_bytes_partial_sum: usize,
+
     packets_lost_total: usize,
     packets_lost_partial_sum: usize,
+
+    packets_skipped_total: usize,
+    packets_skipped_partial_sum: usize,
+
     battery_gauges: HashMap<u64, BatteryData>,
     steamvr_pipeline_latency: Duration,
+
+    // Latency metrics
     total_pipeline_latency_average: SlidingWindowAverage<Duration>,
-    last_vsync_time: Instant,
+    game_delay_average: SlidingWindowAverage<Duration>,
+    server_compositor_average: SlidingWindowAverage<Duration>,
+    encode_delay_average: SlidingWindowAverage<Duration>,
+    network_delay_average: SlidingWindowAverage<Duration>,
+    decode_delay_average: SlidingWindowAverage<Duration>,
+    decoder_queue_delay_average: SlidingWindowAverage<Duration>,
+    client_compositor_average: SlidingWindowAverage<Duration>,
+    vsync_queue_delay_average: SlidingWindowAverage<Duration>,
+
     frame_interval: Duration,
-    last_nominal_bitrate_stats: NominalBitrateStats,
+
+    frame_interarrival_average: SlidingWindowAverage<f32>,
 
     stats_history_buffer: VecDeque<HistoryFrame>,
     map_frames_spf: HashMap<u32, usize>,
+
     prev_highest_shard: i32,
     prev_highest_frame: i32,
 }
@@ -82,26 +113,51 @@ impl StatisticsManager {
         Self {
             history_buffer: VecDeque::new(),
             max_history_size,
+
             last_full_report_instant: Instant::now(),
+            last_nominal_bitrate_stats: NominalBitrateStats::default(),
+
             last_frame_present_instant: Instant::now(),
             last_frame_present_interval: Duration::ZERO,
+
+            last_vsync_time: Instant::now(),
+
             video_packets_total: 0,
             video_packets_partial_sum: 0,
+
             video_bytes_total: 0,
             video_bytes_partial_sum: 0,
+
             packets_lost_total: 0,
             packets_lost_partial_sum: 0,
+
+            packets_skipped_total: 0,
+            packets_skipped_partial_sum: 0,
+
             battery_gauges: HashMap::new(),
             steamvr_pipeline_latency: Duration::from_secs_f32(
                 steamvr_pipeline_frames * nominal_server_frame_interval.as_secs_f32(),
             ),
+
             total_pipeline_latency_average: SlidingWindowAverage::new(
                 Duration::ZERO,
                 max_history_size,
             ),
-            last_vsync_time: Instant::now(),
+            game_delay_average: SlidingWindowAverage::new(Duration::ZERO, max_history_size),
+            server_compositor_average: SlidingWindowAverage::new(Duration::ZERO, max_history_size),
+            encode_delay_average: SlidingWindowAverage::new(Duration::ZERO, max_history_size),
+            network_delay_average: SlidingWindowAverage::new(Duration::ZERO, max_history_size),
+            decode_delay_average: SlidingWindowAverage::new(Duration::ZERO, max_history_size),
+            decoder_queue_delay_average: SlidingWindowAverage::new(
+                Duration::ZERO,
+                max_history_size,
+            ),
+            client_compositor_average: SlidingWindowAverage::new(Duration::ZERO, max_history_size),
+            vsync_queue_delay_average: SlidingWindowAverage::new(Duration::ZERO, max_history_size),
+
             frame_interval: nominal_server_frame_interval,
-            last_nominal_bitrate_stats: NominalBitrateStats::default(),
+
+            frame_interarrival_average: SlidingWindowAverage::new(0., max_history_size),
 
             stats_history_buffer: VecDeque::new(),
             map_frames_spf: HashMap::new(),
@@ -142,9 +198,10 @@ impl StatisticsManager {
             self.last_frame_present_instant = now;
 
             frame.frame_present = now;
+
             self.stats_history_buffer.push_back(frame.clone());
-            if self.stats_history_buffer.len() > self.max_history_size 
-            {
+
+            if self.stats_history_buffer.len() > self.max_history_size {
                 self.stats_history_buffer.pop_front();
             }
         }
@@ -157,6 +214,7 @@ impl StatisticsManager {
             .find(|frame| frame.target_timestamp == target_timestamp && !frame.is_composed)
         {
             frame.is_composed = true;
+
             frame.frame_composed = Instant::now() - offset;
         }
     }
@@ -166,7 +224,7 @@ impl StatisticsManager {
         &mut self,
         target_timestamp: Duration,
         bytes_count: usize,
-        is_idr: bool, 
+        is_idr: bool,
     ) -> Duration {
         self.video_packets_total += 1;
         self.video_packets_partial_sum += 1;
@@ -177,12 +235,12 @@ impl StatisticsManager {
             .stats_history_buffer
             .iter_mut()
             .find(|frame| frame.target_timestamp == target_timestamp && !frame.is_encoded)
-        {   
-
+        {
             frame.is_idr = is_idr;
             frame.is_encoded = true;
 
             frame.frame_encoded = Instant::now();
+
             frame.video_packet_bytes = bytes_count;
 
             frame
@@ -192,7 +250,6 @@ impl StatisticsManager {
             Duration::ZERO
         }
     }
-
 
     pub fn report_frame_sent(
         &mut self,
@@ -208,12 +265,6 @@ impl StatisticsManager {
             frame.frame_index = frame_index as i32;
         }
         self.map_frames_spf.insert(frame_index, shards_count);
-    }
-
-    pub fn report_packet_loss(&mut self) {
-        // this is wrong, only increments by 1 if there is frames skipped, regardless of the number of frames skipped
-        self.packets_lost_total += 1;
-        self.packets_lost_partial_sum += 1;
     }
 
     pub fn report_battery(&mut self, device_id: u64, gauge_value: f32, is_plugged: bool) {
@@ -235,6 +286,13 @@ impl StatisticsManager {
             .iter_mut()
             .find(|frame| frame.frame_index == client_stats.frame_index)
         {
+            self.packets_lost_total +=
+                (client_stats.frames_skipped + client_stats.frames_dropped) as usize;
+            self.packets_lost_partial_sum +=
+                (client_stats.frames_skipped + client_stats.frames_dropped) as usize;
+            self.packets_skipped_total += client_stats.frames_skipped as usize;
+            self.packets_skipped_partial_sum += client_stats.frames_skipped as usize;
+
             frame.total_pipeline_latency = client_stats.total_pipeline_latency;
 
             let game_time_latency = frame
@@ -265,6 +323,22 @@ impl StatisticsManager {
                     + client_stats.vsync_queue,
             );
 
+            self.total_pipeline_latency_average
+                .submit_sample(client_stats.total_pipeline_latency);
+            self.game_delay_average.submit_sample(game_time_latency);
+            self.server_compositor_average
+                .submit_sample(server_compositor_latency);
+            self.encode_delay_average.submit_sample(encoder_latency);
+            self.network_delay_average.submit_sample(network_latency);
+            self.decode_delay_average
+                .submit_sample(client_stats.video_decode);
+            self.decoder_queue_delay_average
+                .submit_sample(client_stats.video_decoder_queue);
+            self.client_compositor_average
+                .submit_sample(client_stats.rendering);
+            self.vsync_queue_delay_average
+                .submit_sample(client_stats.vsync_queue);
+
             let client_fps = 1.0
                 / client_stats
                     .frame_interval
@@ -275,6 +349,9 @@ impl StatisticsManager {
                     .last_frame_present_interval
                     .max(Duration::from_millis(1))
                     .as_secs_f32();
+
+            self.frame_interarrival_average
+                .submit_sample(client_stats.frame_interarrival);
 
             if self.last_full_report_instant + FULL_REPORT_INTERVAL < Instant::now() {
                 self.last_full_report_instant += FULL_REPORT_INTERVAL;
@@ -289,13 +366,49 @@ impl StatisticsManager {
                     video_mbits_per_sec: self.video_bytes_partial_sum as f32 * 8.
                         / 1e6
                         / interval_secs,
-                    total_latency_ms: client_stats.total_pipeline_latency.as_secs_f32() * 1000.,
-                    network_latency_ms: network_latency.as_secs_f32() * 1000.,
-                    encode_latency_ms: encoder_latency.as_secs_f32() * 1000.,
-                    decode_latency_ms: client_stats.video_decode.as_secs_f32() * 1000.,
+                    total_pipeline_latency_average_ms: self
+                        .total_pipeline_latency_average
+                        .get_average()
+                        .as_secs_f32()
+                        * 1000.,
+                    game_delay_average_ms: self.game_delay_average.get_average().as_secs_f32()
+                        * 1000.,
+                    server_compositor_delay_average_ms: self
+                        .server_compositor_average
+                        .get_average()
+                        .as_secs_f32()
+                        * 1000.,
+                    encode_delay_average_ms: self.encode_delay_average.get_average().as_secs_f32()
+                        * 1000.,
+                    network_delay_average_ms: self
+                        .network_delay_average
+                        .get_average()
+                        .as_secs_f32()
+                        * 1000.,
+                    decode_delay_average_ms: self.decode_delay_average.get_average().as_secs_f32()
+                        * 1000.,
+                    decoder_queue_delay_average_ms: self
+                        .decoder_queue_delay_average
+                        .get_average()
+                        .as_secs_f32()
+                        * 1000.,
+                    client_compositor_average_ms: self
+                        .client_compositor_average
+                        .get_average()
+                        .as_secs_f32()
+                        * 1000.,
+                    vsync_queue_delay_average_ms: self
+                        .vsync_queue_delay_average
+                        .get_average()
+                        .as_secs_f32()
+                        * 1000.,
+                    frame_jitter_ms: self.frame_interarrival_average.get_std() * 1000.,
                     packets_lost_total: self.packets_lost_total,
                     packets_lost_per_sec: (self.packets_lost_partial_sum as f32 / interval_secs)
                         as _,
+                    packets_skipped_total: self.packets_skipped_total,
+                    packets_skipped_per_sec: (self.packets_skipped_partial_sum as f32
+                        / interval_secs) as _,
                     client_fps: client_fps as _,
                     server_fps: server_fps as _,
                     battery_hmd: (self
@@ -325,40 +438,39 @@ impl StatisticsManager {
             } else {
                 0.0
             };
-
             let network_throughput_bps: f32 = if client_stats.frame_interarrival != 0.0 {
-                client_stats.rx_bytes as f32 * 8.0 / client_stats.frame_interarrival 
-            }     
-            else{0.0}; 
+                client_stats.rx_bytes as f32 * 8.0 / client_stats.frame_interarrival
+            } else {
+                0.0
+            };
 
             let peak_network_throughput_bps: f32 = if client_stats.frame_span != 0.0 {
                 client_stats.bytes_in_frame as f32 * 8.0 / client_stats.frame_span
-            }
-            else{0.0}; 
+            } else {
+                0.0
+            };
 
-            let application_throughput_bps = if client_stats.frame_interarrival != 0.0{
+            let application_throughput_bps = if client_stats.frame_interarrival != 0.0 {
                 client_stats.bytes_in_frame_app as f32 * 8.0 / client_stats.frame_interarrival
-            }
-            else{0.0}; 
+            } else {
+                0.0
+            };
 
             let mut shards_sent: usize = 0;
-            // let shard_loss: 
-            let mut shard_loss_server: usize = 0; 
+            let shards_lost: usize;
 
             if self.prev_highest_frame == client_stats.highest_rx_frame_index as i32 {
-
                 if self.prev_highest_shard < client_stats.highest_rx_shard_index as i32 {
-                    shards_sent = (client_stats.highest_rx_shard_index - self.prev_highest_shard) as usize;
+                    shards_sent =
+                        (client_stats.highest_rx_shard_index - self.prev_highest_shard) as usize;
 
                     self.prev_highest_shard = client_stats.highest_rx_shard_index as i32;
                 }
-            }
-            else if self.prev_highest_frame < client_stats.highest_rx_frame_index as i32 {
-
+            } else if self.prev_highest_frame < client_stats.highest_rx_frame_index as i32 {
                 let shards_from_prev =
                     match self.map_frames_spf.get(&(self.prev_highest_frame as u32)) {
                         Some(&shards_count_prev) => {
-                            shards_count_prev.saturating_sub(self.prev_highest_shard as usize + 1)
+                            shards_count_prev.saturating_sub((self.prev_highest_shard + 1) as usize)
                         }
                         None => 0,
                     };
@@ -377,10 +489,8 @@ impl StatisticsManager {
 
                 shards_sent = shards_from_prev + shards_from_inbetween + shards_from_actual;
 
-
                 self.prev_highest_frame = client_stats.highest_rx_frame_index as i32;
                 self.prev_highest_shard = client_stats.highest_rx_shard_index as i32;
-
 
                 let keys_to_drop: Vec<_> = self
                     .map_frames_spf
@@ -393,46 +503,48 @@ impl StatisticsManager {
                     self.map_frames_spf.remove_entry(&key);
                 }
             }
-            shard_loss_server = shards_sent - client_stats.rx_shard_counter as usize;
+
+            shards_lost = shards_sent - client_stats.rx_shard_counter as usize;
 
             // todo: use target timestamp in nanoseconds. the dashboard needs to use the first
             // timestamp as the graph time origin.
-            alvr_events::send_event(EventType::GraphStatistics(GraphStatistics {              
-                    total_pipeline_latency_s: client_stats.total_pipeline_latency.as_secs_f32(),
-                    game_time_s: game_time_latency.as_secs_f32(),
-                    server_compositor_s: server_compositor_latency.as_secs_f32(),
-                    encoder_s: encoder_latency.as_secs_f32(),
-                    network_s: network_latency.as_secs_f32(),
-                    decoder_s: client_stats.video_decode.as_secs_f32(),
-                    decoder_queue_s: client_stats.video_decoder_queue.as_secs_f32(),
-                    client_compositor_s: client_stats.rendering.as_secs_f32(),
-                    vsync_queue_s: client_stats.vsync_queue.as_secs_f32(),
-                    client_fps,
-                    server_fps,
-                    nominal_bitrate: self.last_nominal_bitrate_stats.clone(),
-                    actual_bitrate_bps: bitrate_bps,
-    
-                    is_idr: frame.is_idr,
-                    frame_index: client_stats.frame_index as u32,
-    
-                    frame_span_s: client_stats.frame_span,
-                    frame_interarrival_s: client_stats.frame_interarrival,
-    
-                    jitter_avg_frame: client_stats.jitter_avg_frame,
-                    filtered_ow_delay: client_stats.filtered_ow_delay,
-    
-                    network_throughput_bps: network_throughput_bps,
-                    peak_network_throughput_bps: peak_network_throughput_bps,
-                    application_throughput_bps: application_throughput_bps,
-    
-                    frames_skipped: client_stats.frames_skipped,
-                    frames_dropped: client_stats.frames_dropped,
-                    frame_loss: client_stats.frames_skipped + client_stats.frames_dropped,
-    
-                    shards_lost: shard_loss_server,
-                    shards_duplicated: client_stats.duplicated_shard_counter,
-                    threshold_gcc: client_stats.threshold_gcc, 
-                    internal_state_gcc: client_stats.internal_state_gcc, 
+            alvr_events::send_event(EventType::GraphStatistics(GraphStatistics {
+                total_pipeline_latency_s: client_stats.total_pipeline_latency.as_secs_f32(),
+                game_time_s: game_time_latency.as_secs_f32(),
+                server_compositor_s: server_compositor_latency.as_secs_f32(),
+                encoder_s: encoder_latency.as_secs_f32(),
+                network_s: network_latency.as_secs_f32(),
+                decoder_s: client_stats.video_decode.as_secs_f32(),
+                decoder_queue_s: client_stats.video_decoder_queue.as_secs_f32(),
+                client_compositor_s: client_stats.rendering.as_secs_f32(),
+                vsync_queue_s: client_stats.vsync_queue.as_secs_f32(),
+                client_fps,
+                server_fps,
+                nominal_bitrate: self.last_nominal_bitrate_stats.clone(),
+                actual_bitrate_bps: bitrate_bps,
+
+                is_idr: frame.is_idr,
+                frame_index: client_stats.frame_index as u32,
+
+                frame_span_s: client_stats.frame_span,
+                frame_interarrival_s: client_stats.frame_interarrival,
+
+                interarrival_jitter: client_stats.interarrival_jitter,
+                ow_delay: client_stats.ow_delay,
+
+                network_throughput_bps: network_throughput_bps,
+                peak_network_throughput_bps: peak_network_throughput_bps,
+                application_throughput_bps: application_throughput_bps,
+
+                frames_skipped: client_stats.frames_skipped,
+                frames_dropped: client_stats.frames_dropped,
+                frame_loss: client_stats.frames_skipped + client_stats.frames_dropped,
+
+                shards_lost: shards_lost,
+                shards_duplicated: client_stats.duplicated_shard_counter,
+
+                threshold_gcc: client_stats.threshold_gcc,
+                internal_state_gcc: client_stats.internal_state_gcc,
             }));
 
             network_latency
@@ -440,7 +552,6 @@ impl StatisticsManager {
             Duration::ZERO
         }
     }
-
 
     pub fn video_pipeline_latency_average(&self) -> Duration {
         self.total_pipeline_latency_average.get_average()

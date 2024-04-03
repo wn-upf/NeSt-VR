@@ -3,7 +3,7 @@ use std::os::unix::prelude::PermissionsExt;
 use std::{
     collections::BTreeMap,
     env,
-    fs::{self, File, Permissions},
+    fs::{self, File},
     io::{Cursor, Write},
     mem,
     path::{Path, PathBuf},
@@ -758,7 +758,7 @@ async fn install(
 
     let buffer = download(tx, "Downloading Streamer", &url, client).await?;
 
-    let mut installation_dir = data_dir().extended(VERSIONS_SUBDIR).extended(&release.tag);
+    let installation_dir = data_dir().extended(VERSIONS_SUBDIR).extended(&release.tag);
 
     fs::create_dir_all(&installation_dir)?;
 

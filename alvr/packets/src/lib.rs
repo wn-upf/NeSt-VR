@@ -1,6 +1,6 @@
 use alvr_common::{
     glam::{UVec2, Vec2},
-    ConnectionState, DeviceMotion, Fov, LogEntry, LogSeverity, Pose, StatesWebrtc
+    ConnectionState, DeviceMotion, Fov, LogEntry, LogSeverity, Pose, StatesWebrtc,
 };
 use alvr_session::{CodecType, SessionConfig};
 use serde::{Deserialize, Serialize};
@@ -203,8 +203,8 @@ pub struct ClientStatistics {
     pub frame_index: i32,
     pub frame_span: f32,
     pub frame_interarrival: f32,
-    pub jitter_avg_frame: f32,
-    pub filtered_ow_delay: f32,
+    pub interarrival_jitter: f32,
+    pub ow_delay: f32,
     pub rx_bytes: u32,
     pub bytes_in_frame: u32,
     pub bytes_in_frame_app: u32,
@@ -215,7 +215,7 @@ pub struct ClientStatistics {
     pub highest_rx_frame_index: i32,
     pub highest_rx_shard_index: i32,
     pub threshold_gcc: f32,
-    pub internal_state_gcc: StatesWebrtc, 
+    pub internal_state_gcc: StatesWebrtc,
 }
 
 #[derive(Serialize, Deserialize, Clone, Debug)]

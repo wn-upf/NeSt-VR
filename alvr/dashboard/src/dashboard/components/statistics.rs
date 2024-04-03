@@ -9,7 +9,6 @@ use eframe::{
     emath::RectTransform,
     epaint::Pos2,
 };
-use env_logger::fmt::Color;
 use statrs::statistics::{self, OrderStatistics};
 use std::{collections::VecDeque, ops::RangeInclusive};
 
@@ -55,7 +54,6 @@ impl StatisticsTab {
                 self.draw_jitter(ui, available_width);
                 self.draw_frameloss(ui, available_width);
                 self.draw_frame_span_interarrival(ui, available_width);
-
             });
         } else {
             ui.heading("No statistics available");
@@ -233,7 +231,7 @@ impl StatisticsTab {
         let mut data = statistics::Data::new(
             self.history
                 .iter()
-                .map(|stats| stats.jitter_avg_frame as f64)
+                .map(|stats| stats.interarrival_jitter as f64)
                 .collect::<Vec<_>>(),
         );
         self.draw_graph(
@@ -242,30 +240,26 @@ impl StatisticsTab {
             "Jitter Graph",
             0.0..=(data.quantile(UPPER_QUANTILE) * 2.0) as f32,
             |painter, to_screen_trans| {
-                let mut jitter_avg_frame = Vec::with_capacity(GRAPH_HISTORY_SIZE);
-                let mut filtered_ow_delay = Vec::with_capacity(GRAPH_HISTORY_SIZE);
+                let mut interarrival_jitter = Vec::with_capacity(GRAPH_HISTORY_SIZE);
+                let mut ow_delay = Vec::with_capacity(GRAPH_HISTORY_SIZE);
                 let mut threshold_gcc = Vec::with_capacity(GRAPH_HISTORY_SIZE);
-                                
 
                 for i in 0..GRAPH_HISTORY_SIZE {
-
-                    let pointer_graphstatistics = &self.history[i]; 
+                    let pointer_graphstatistics = &self.history[i];
                     // new stats
 
-                    let value_jitt = pointer_graphstatistics.jitter_avg_frame;
-                    jitter_avg_frame.push(to_screen_trans * pos2(i as f32, value_jitt)); 
-                    
-                    let value_owd = pointer_graphstatistics.filtered_ow_delay;
-                    filtered_ow_delay.push(to_screen_trans * pos2(i as f32, value_owd));
-                    
+                    let value_jitt = pointer_graphstatistics.interarrival_jitter;
+                    interarrival_jitter.push(to_screen_trans * pos2(i as f32, value_jitt));
+
+                    let value_owd = pointer_graphstatistics.ow_delay;
+                    ow_delay.push(to_screen_trans * pos2(i as f32, value_owd));
+
                     let value_thr = pointer_graphstatistics.threshold_gcc;
                     threshold_gcc.push(to_screen_trans * pos2(i as f32, value_thr));
-
                 }
-                draw_lines(painter, jitter_avg_frame, Color32::GRAY);
-                draw_lines(painter, filtered_ow_delay, graph_colors::TRANSCODE);
+                draw_lines(painter, interarrival_jitter, Color32::GRAY);
+                draw_lines(painter, ow_delay, graph_colors::TRANSCODE);
                 draw_lines(painter, threshold_gcc, graph_colors::NETWORK);
-                
             },
             |ui, stats| {
                 fn maybe_label(
@@ -279,12 +273,26 @@ impl StatisticsTab {
                     }
                 }
 
-                let graphstats = stats; 
-               
-                maybe_label(ui, "Jitter Average", Some(graphstats.jitter_avg_frame), Color32::DARK_BLUE);
-                maybe_label(ui, "Filtered OW Delay", Some(graphstats.filtered_ow_delay), Color32::DARK_GREEN);
-                maybe_label(ui, "Threshold from GCC", Some(graphstats.threshold_gcc), Color32::LIGHT_BLUE); 
+                let graphstats = stats;
 
+                maybe_label(
+                    ui,
+                    "Jitter Average",
+                    Some(graphstats.interarrival_jitter),
+                    Color32::DARK_BLUE,
+                );
+                maybe_label(
+                    ui,
+                    "Filtered OW Delay",
+                    Some(graphstats.ow_delay),
+                    Color32::DARK_GREEN,
+                );
+                maybe_label(
+                    ui,
+                    "Threshold from GCC",
+                    Some(graphstats.threshold_gcc),
+                    Color32::LIGHT_BLUE,
+                );
             },
         )
     }
@@ -305,17 +313,16 @@ impl StatisticsTab {
                 let mut frameloss = Vec::with_capacity(GRAPH_HISTORY_SIZE);
                 let mut shardloss = Vec::with_capacity(GRAPH_HISTORY_SIZE);
                 let mut dup_shards = Vec::with_capacity(GRAPH_HISTORY_SIZE);
-                                
-                for i in 0..GRAPH_HISTORY_SIZE {
 
-                    let pointer_graphstatistics = &self.history[i]; 
+                for i in 0..GRAPH_HISTORY_SIZE {
+                    let pointer_graphstatistics = &self.history[i];
                     // new stats
                     let val_fl = pointer_graphstatistics.frame_loss;
-                    frameloss.push(to_screen_trans * pos2(i as f32, val_fl as f32)); 
-                    
+                    frameloss.push(to_screen_trans * pos2(i as f32, val_fl as f32));
+
                     let val_sl = pointer_graphstatistics.shards_lost;
                     shardloss.push(to_screen_trans * pos2(i as f32, val_sl as f32));
-                    
+
                     let val_dups = pointer_graphstatistics.shards_duplicated;
                     dup_shards.push(to_screen_trans * pos2(i as f32, val_dups as f32));
                 }
@@ -323,7 +330,6 @@ impl StatisticsTab {
                 draw_lines(painter, frameloss, Color32::GRAY);
                 draw_lines(painter, shardloss, graph_colors::TRANSCODE);
                 draw_lines(painter, dup_shards, graph_colors::NETWORK);
-                
             },
             |ui, stats| {
                 fn maybe_label(
@@ -333,20 +339,34 @@ impl StatisticsTab {
                     color: Color32,
                 ) {
                     if let Some(value) = maybe_value_bps {
-                        ui.colored_label(color, &format!("{text}: {:.0} ", value ));
+                        ui.colored_label(color, &format!("{text}: {:.0} ", value));
                     }
                 }
 
-                let graphstats = stats; 
-               
-                maybe_label(ui, "Frame Loss", Some(graphstats.frame_loss as f32), Color32::DARK_BLUE);
-                maybe_label(ui, "Shard Loss", Some(graphstats.shards_lost as f32), Color32::DARK_GREEN);
-                maybe_label(ui, "Shards Duplicated", Some(graphstats.shards_duplicated as f32), Color32::LIGHT_BLUE); 
+                let graphstats = stats;
 
+                maybe_label(
+                    ui,
+                    "Frame Loss",
+                    Some(graphstats.frame_loss as f32),
+                    Color32::DARK_BLUE,
+                );
+                maybe_label(
+                    ui,
+                    "Shard Loss",
+                    Some(graphstats.shards_lost as f32),
+                    Color32::DARK_GREEN,
+                );
+                maybe_label(
+                    ui,
+                    "Shards Duplicated",
+                    Some(graphstats.shards_duplicated as f32),
+                    Color32::LIGHT_BLUE,
+                );
             },
         )
     }
-    
+
     fn draw_frame_span_interarrival(&self, ui: &mut Ui, available_width: f32) {
         let mut data = statistics::Data::new(
             self.history
@@ -357,27 +377,24 @@ impl StatisticsTab {
         self.draw_graph(
             ui,
             available_width,
-            "Frame Span and inter-frame time Graph",
+            "Frame Span and Interarrival Graph",
             0.0..=(data.quantile(UPPER_QUANTILE) * 2.0) as f32,
             |painter, to_screen_trans| {
                 let mut frame_span = Vec::with_capacity(GRAPH_HISTORY_SIZE);
                 let mut frame_interarrival = Vec::with_capacity(GRAPH_HISTORY_SIZE);
-                                
-                for i in 0..GRAPH_HISTORY_SIZE {
 
-                    let pointer_graphstatistics = &self.history[i]; 
+                for i in 0..GRAPH_HISTORY_SIZE {
+                    let pointer_graphstatistics = &self.history[i];
                     // new stats
                     let fs = pointer_graphstatistics.frame_span_s;
-                    frame_span.push(to_screen_trans * pos2(i as f32, fs as f32)); 
-                    
+                    frame_span.push(to_screen_trans * pos2(i as f32, fs as f32));
+
                     let fi = pointer_graphstatistics.frame_interarrival_s;
                     frame_interarrival.push(to_screen_trans * pos2(i as f32, fi as f32));
-                    
                 }
 
                 draw_lines(painter, frame_span, Color32::GRAY);
                 draw_lines(painter, frame_interarrival, graph_colors::TRANSCODE);
-                
             },
             |ui, stats| {
                 fn maybe_label(
@@ -387,13 +404,23 @@ impl StatisticsTab {
                     color: Color32,
                 ) {
                     if let Some(value) = maybe_value_bps {
-                        ui.colored_label(color, &format!("{text}: {:.6} ", value ));
+                        ui.colored_label(color, &format!("{text}: {:.6} ", value));
                     }
                 }
-                let graphstats = stats; 
-               
-                maybe_label(ui, "Frame span", Some(graphstats.frame_span_s as f32), Color32::DARK_BLUE);
-                maybe_label(ui, "Frame Interarrival", Some(graphstats.frame_interarrival_s as f32), Color32::DARK_GREEN);
+                let graphstats = stats;
+
+                maybe_label(
+                    ui,
+                    "Frame span",
+                    Some(graphstats.frame_span_s as f32),
+                    Color32::DARK_BLUE,
+                );
+                maybe_label(
+                    ui,
+                    "Frame Interarrival",
+                    Some(graphstats.frame_interarrival_s as f32),
+                    Color32::DARK_GREEN,
+                );
             },
         )
     }
@@ -420,13 +447,15 @@ impl StatisticsTab {
                 let mut requested = Vec::with_capacity(GRAPH_HISTORY_SIZE);
                 let mut actual = Vec::with_capacity(GRAPH_HISTORY_SIZE);
                 let mut network_throughput_bps: Vec<Pos2> = Vec::with_capacity(GRAPH_HISTORY_SIZE);
-                let mut peak_network_throughput_bps: Vec<Pos2> = Vec::with_capacity(GRAPH_HISTORY_SIZE);
-                let mut application_throughput_bps: Vec<Pos2> = Vec::with_capacity(GRAPH_HISTORY_SIZE);
+                let mut peak_network_throughput_bps: Vec<Pos2> =
+                    Vec::with_capacity(GRAPH_HISTORY_SIZE);
+                let mut application_throughput_bps: Vec<Pos2> =
+                    Vec::with_capacity(GRAPH_HISTORY_SIZE);
 
                 for i in 0..GRAPH_HISTORY_SIZE {
                     let nom_br = &self.history[i].nominal_bitrate;
 
-                    let pointer_graphstatistics = &self.history[i]; 
+                    let pointer_graphstatistics = &self.history[i];
 
                     if let Some(value) = nom_br.scaled_calculated_bps {
                         scaled_calculated.push(to_screen_trans * pos2(i as f32, value / 1e6))
@@ -450,14 +479,16 @@ impl StatisticsTab {
                     // new stats
 
                     let value_nw = pointer_graphstatistics.network_throughput_bps;
-                    network_throughput_bps.push(to_screen_trans * pos2(i as f32, value_nw / 1e6)); 
-                    
+                    network_throughput_bps.push(to_screen_trans * pos2(i as f32, value_nw / 1e6));
+
                     let value_pk = pointer_graphstatistics.peak_network_throughput_bps;
-                    peak_network_throughput_bps.push(to_screen_trans * pos2(i as f32, value_pk / 1e6));
-                    
+                    peak_network_throughput_bps
+                        .push(to_screen_trans * pos2(i as f32, value_pk / 1e6));
+
                     let value_app = pointer_graphstatistics.application_throughput_bps;
-                    application_throughput_bps.push(to_screen_trans * pos2(i as f32, value_app / 1e6));
-                    
+                    application_throughput_bps
+                        .push(to_screen_trans * pos2(i as f32, value_app / 1e6));
+
                     requested.push(to_screen_trans * pos2(i as f32, nom_br.requested_bps / 1e6));
                     actual.push(
                         to_screen_trans * pos2(i as f32, self.history[i].actual_bitrate_bps / 1e6),
@@ -474,9 +505,8 @@ impl StatisticsTab {
                 draw_lines(painter, actual, theme::FG);
 
                 draw_lines(painter, network_throughput_bps, theme::ACCENT);
-                draw_lines(painter, peak_network_throughput_bps, theme::DARKER_BG); 
-                draw_lines(painter, application_throughput_bps, theme::SEPARATOR_BG); 
-
+                draw_lines(painter, peak_network_throughput_bps, theme::DARKER_BG);
+                draw_lines(painter, application_throughput_bps, theme::SEPARATOR_BG);
             },
             |ui, stats| {
                 fn maybe_label(
@@ -491,7 +521,7 @@ impl StatisticsTab {
                 }
 
                 let n = &stats.nominal_bitrate;
-                let graphstats = stats; 
+                let graphstats = stats;
 
                 maybe_label(
                     ui,
@@ -526,10 +556,24 @@ impl StatisticsTab {
                     Some(stats.actual_bitrate_bps),
                     theme::FG,
                 );
-                maybe_label(ui, "Network Throughput", Some(graphstats.network_throughput_bps), Color32::DARK_BLUE);
-                maybe_label(ui, "Peak Throughput", Some(graphstats.peak_network_throughput_bps), Color32::DARK_GREEN);
-                maybe_label(ui, "Application Throughput", Some(graphstats.application_throughput_bps), Color32::LIGHT_BLUE); 
-
+                maybe_label(
+                    ui,
+                    "Network Throughput",
+                    Some(graphstats.network_throughput_bps),
+                    Color32::DARK_BLUE,
+                );
+                maybe_label(
+                    ui,
+                    "Peak Throughput",
+                    Some(graphstats.peak_network_throughput_bps),
+                    Color32::DARK_GREEN,
+                );
+                maybe_label(
+                    ui,
+                    "Application Throughput",
+                    Some(graphstats.application_throughput_bps),
+                    Color32::LIGHT_BLUE,
+                );
             },
         )
     }
@@ -550,22 +594,61 @@ impl StatisticsTab {
             ui[0].label("Bitrate:");
             ui[1].label(&format!("{:.1} Mbps", statistics.video_mbits_per_sec));
 
+            ui[0].label("Game delay:");
+            ui[1].label(&format!("{:.2} ms", statistics.game_delay_average_ms));
+
+            ui[0].label("Server compositor delay:");
+            ui[1].label(&format!(
+                "{:.2} ms",
+                statistics.server_compositor_delay_average_ms
+            ));
+
+            ui[0].label("Encoder delay:");
+            ui[1].label(&format!("{:.2} ms", statistics.encode_delay_average_ms));
+
+            ui[0].label("Network delay:");
+            ui[1].label(&format!("{:.2} ms", statistics.network_delay_average_ms));
+
+            ui[0].label("Decoder delay:");
+            ui[1].label(&format!("{:.2} ms", statistics.decode_delay_average_ms));
+
+            ui[0].label("Decoder queue delay:");
+            ui[1].label(&format!(
+                "{:.2} ms",
+                statistics.decoder_queue_delay_average_ms
+            ));
+
+            ui[0].label("Client compositor delay:");
+            ui[1].label(&format!(
+                "{:.2} ms",
+                statistics.client_compositor_average_ms
+            ));
+
+            ui[0].label("Vsync delay:");
+            ui[1].label(&format!(
+                "{:.2} ms",
+                statistics.vsync_queue_delay_average_ms
+            ));
+
             ui[0].label("Total latency:");
-            ui[1].label(&format!("{:.0} ms", statistics.total_latency_ms));
+            ui[1].label(&format!(
+                "{:.0} ms",
+                statistics.total_pipeline_latency_average_ms
+            ));
 
-            ui[0].label("Encoder latency:");
-            ui[1].label(&format!("{:.2} ms", statistics.encode_latency_ms));
-
-            ui[0].label("Transport latency:");
-            ui[1].label(&format!("{:.2} ms", statistics.network_latency_ms));
-
-            ui[0].label("Decoder latency:");
-            ui[1].label(&format!("{:.2} ms", statistics.decode_latency_ms));
+            ui[0].label("Frame jitter:");
+            ui[1].label(&format!("{:.0} ms", statistics.frame_jitter_ms));
 
             ui[0].label("Total packets lost:");
             ui[1].label(&format!(
                 "{} packets ({} packets/s)",
                 statistics.packets_lost_total, statistics.packets_lost_per_sec
+            ));
+
+            ui[0].label("Total packets skipped:");
+            ui[1].label(&format!(
+                "{} packets ({} packets/s)",
+                statistics.packets_skipped_total, statistics.packets_skipped_per_sec
             ));
 
             ui[0].label("Client FPS:");

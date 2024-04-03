@@ -11,14 +11,13 @@ use crate::{
 };
 use alvr_audio::AudioDevice;
 use alvr_common::{
-    StatesWebrtc, 
     debug, error,
     glam::UVec2,
     info,
     once_cell::sync::Lazy,
     parking_lot::{Condvar, RwLock},
     wait_rwlock, warn, AnyhowToCon, ConResult, ConnectionError, ConnectionState, LifecycleState,
-    OptLazy, ToCon, ALVR_VERSION,
+    OptLazy, StatesWebrtc, ToCon, ALVR_VERSION,
 };
 use alvr_packets::{
     ClientConnectionResult, ClientControlPacket, ClientStatistics, Haptics, ServerControlPacket,
@@ -45,8 +44,8 @@ pub struct VideoStatsRx {
     pub frame_span: f32,
     pub frame_interarrival: f32,
 
-    pub jitter_avg_frame: f32,
-    pub filtered_ow_delay: f32,
+    pub interarrival_jitter: f32,
+    pub ow_delay: f32,
 
     pub rx_bytes: u32,
     pub bytes_in_frame: u32,
@@ -60,8 +59,8 @@ pub struct VideoStatsRx {
 
     pub highest_rx_frame_index: i32,
     pub highest_rx_shard_index: i32,
-    pub threshold_gcc: f32, 
-    pub internal_state_gcc: StatesWebrtc, 
+    pub threshold_gcc: f32,
+    pub internal_state_gcc: StatesWebrtc,
 }
 #[cfg(target_os = "android")]
 use crate::audio;
@@ -303,8 +302,8 @@ fn connection_pipeline(
         frame_span: 0.0,
         frame_interarrival: 0.0,
 
-        jitter_avg_frame: 0.0,
-        filtered_ow_delay: 0.0,
+        interarrival_jitter: 0.0,
+        ow_delay: 0.0,
 
         rx_bytes: 0,
         bytes_in_frame: 0,
@@ -318,8 +317,8 @@ fn connection_pipeline(
 
         highest_rx_frame_index: 0,
         highest_rx_shard_index: 0,
-        internal_state_gcc: StatesWebrtc::NORMAL, 
-        threshold_gcc: 0.0, 
+        internal_state_gcc: StatesWebrtc::NORMAL,
+        threshold_gcc: 0.0,
     };
     {
         let config = &mut *DECODER_INIT_CONFIG.lock();
@@ -337,7 +336,6 @@ fn connection_pipeline(
         stream_socket.subscribe_to_stream::<Haptics>(HAPTICS, MAX_UNREAD_PACKETS);
     let statistics_sender = stream_socket.request_stream(STATISTICS);
 
-
     let video_receive_thread = thread::spawn(move || {
         let mut stream_corrupted = false;
         while is_streaming() {
@@ -353,8 +351,8 @@ fn connection_pipeline(
             videoStats.frame_index = data.get_frame_index();
 
             videoStats.frame_span = data.get_frame_span();
-            videoStats.jitter_avg_frame = data.get_jitter_avg_frame();
-            videoStats.filtered_ow_delay = data.get_filtered_ow_delay();
+            videoStats.interarrival_jitter = data.get_interarrival_jitter();
+            videoStats.ow_delay = data.get_ow_delay();
             videoStats.bytes_in_frame = data.get_bytes_in_frame();
             videoStats.bytes_in_frame_app = data.get_bytes_in_frame_app();
             videoStats.highest_rx_frame_index = data.get_highest_rx_frame_index();
@@ -366,9 +364,8 @@ fn connection_pipeline(
             videoStats.rx_shard_counter += data.get_rx_shard_counter();
             videoStats.duplicated_shard_counter += data.get_duplicated_shard_counter();
 
-            
             videoStats.internal_state_gcc = data.get_gcc_state();
-            videoStats.threshold_gcc = data.get_adaptive_threshold(); 
+            videoStats.threshold_gcc = data.get_adaptive_threshold();
 
             if let Some(stats) = &mut *STATISTICS_MANAGER.lock() {
                 stats.report_video_packet_received(header.timestamp);
@@ -381,24 +378,28 @@ fn connection_pipeline(
                 if let Some(sender) = &mut *CONTROL_SENDER.lock() {
                     sender.send(&ClientControlPacket::RequestIdr).ok();
                 }
-                warn!("Network dropped {} video packets", data.get_frames_skipped()); 
+                warn!(
+                    "Network dropped {} video packets",
+                    data.get_frames_skipped()
+                );
             }
             if !stream_corrupted || !settings.connection.avoid_video_glitching {
                 if !decoder::push_nal(header.timestamp, nal) {
                     stream_corrupted = true;
                     if let Some(sender) = &mut *CONTROL_SENDER.lock() {
                         sender.send(&ClientControlPacket::RequestIdr).ok();
-                        videoStats.frames_dropped += 1; 
+                        videoStats.frames_dropped += 1;
                     }
-                    
-                    if let Some(stats) = &mut *STATISTICS_MANAGER.lock(){
+
+                    if let Some(stats) = &mut *STATISTICS_MANAGER.lock() {
                         stats.report_video_packet_dropped(data.get_frame_index());
                     }
                     warn!(
                         "Dropped video packet {}. Reason: Decoder saturation",
                         data.get_frame_index()
-                    )                }
-                else{ //case where frame is decoded correctly
+                    )
+                } else {
+                    //case where frame is decoded correctly
                     if let Some(stats) = &mut *STATISTICS_MANAGER.lock() {
                         stats.report_video_statistics(header.timestamp, videoStats);
                     }
@@ -408,17 +409,19 @@ fn connection_pipeline(
                     videoStats.rx_shard_counter = 0;
                     videoStats.frames_skipped = 0;
                     videoStats.frames_dropped = 0;
-                    
                 }
             } else {
                 if let Some(sender) = &mut *CONTROL_SENDER.lock() {
                     sender.send(&ClientControlPacket::RequestIdr).ok();
                 }
-                videoStats.frames_dropped += 1; 
-                if let Some(stats) = &mut *STATISTICS_MANAGER.lock(){
+                videoStats.frames_dropped += 1;
+                if let Some(stats) = &mut *STATISTICS_MANAGER.lock() {
                     stats.report_video_packet_dropped(data.get_frame_index());
                 }
-                warn!("Dropped video packet {}. Reason: Waiting for IDR frame", data.get_frame_index())
+                warn!(
+                    "Dropped video packet {}. Reason: Waiting for IDR frame",
+                    data.get_frame_index()
+                )
             }
         }
     });

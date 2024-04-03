@@ -31,6 +31,17 @@ impl SlidingWindowAverage<f32> {
     pub fn get_average(&self) -> f32 {
         self.history_buffer.iter().sum::<f32>() / self.history_buffer.len() as f32
     }
+
+    pub fn get_std(&self) -> f32 {
+        let average = self.get_average();
+        let variance = self
+            .history_buffer
+            .iter()
+            .map(|&x| (x - average).powf(2.))
+            .sum::<f32>()
+            / (self.history_buffer.len() - 1) as f32; // sample variance
+        variance.sqrt()
+    }
 }
 
 impl SlidingWindowAverage<Duration> {

@@ -24,7 +24,7 @@ pub struct StatisticsManager {
     total_pipeline_latency_average: SlidingWindowAverage<Duration>,
     steamvr_pipeline_latency: Duration,
 
-    stats_history_buffer: VecDeque<HistoryFrame>, 
+    stats_history_buffer: VecDeque<HistoryFrame>,
 }
 
 impl StatisticsManager {
@@ -44,7 +44,7 @@ impl StatisticsManager {
             steamvr_pipeline_latency: Duration::from_secs_f32(
                 steamvr_pipeline_frames * nominal_server_frame_interval.as_secs_f32(),
             ),
-            stats_history_buffer: VecDeque::new(), 
+            stats_history_buffer: VecDeque::new(),
         }
     }
 
@@ -60,12 +60,12 @@ impl StatisticsManager {
                 video_packet_received: Instant::now(),
                 client_stats: ClientStatistics {
                     target_timestamp,
-                    frame_index: 0, 
+                    frame_index: 0,
                     ..Default::default()
                 },
                 is_decoded: false,
                 is_composed: false,
-                is_submitted: false, 
+                is_submitted: false,
             });
         }
 
@@ -82,7 +82,7 @@ impl StatisticsManager {
         {
             frame.video_packet_received = Instant::now();
             self.stats_history_buffer.push_back(frame.clone());
-           
+
             if self.stats_history_buffer.len() > self.max_history_size {
                 self.stats_history_buffer.pop_front();
             }
@@ -103,8 +103,8 @@ impl StatisticsManager {
             frame.client_stats.frame_span = video_stats.frame_span;
             frame.client_stats.frame_interarrival = video_stats.frame_interarrival;
 
-            frame.client_stats.jitter_avg_frame = video_stats.jitter_avg_frame;
-            frame.client_stats.filtered_ow_delay = video_stats.filtered_ow_delay;
+            frame.client_stats.interarrival_jitter = video_stats.interarrival_jitter;
+            frame.client_stats.ow_delay = video_stats.ow_delay;
 
             frame.client_stats.rx_bytes = video_stats.rx_bytes;
             frame.client_stats.bytes_in_frame = video_stats.bytes_in_frame;
@@ -120,7 +120,7 @@ impl StatisticsManager {
             frame.client_stats.highest_rx_shard_index = video_stats.highest_rx_shard_index;
         }
     }
-    
+
     pub fn report_video_packet_dropped(&mut self, frame_index: u32) {
         if let Some(index) = self
             .stats_history_buffer
@@ -135,8 +135,9 @@ impl StatisticsManager {
             frame.client_stats.target_timestamp == target_timestamp && !frame.is_decoded
         }) {
             frame.is_decoded = true;
-         
-            frame.client_stats.video_decode = Instant::now().saturating_duration_since(frame.video_packet_received);
+
+            frame.client_stats.video_decode =
+                Instant::now().saturating_duration_since(frame.video_packet_received);
         }
     }
 
@@ -189,18 +190,23 @@ impl StatisticsManager {
                 // accumulate the metrics when frames are dropped after decoding
                 self.stats_history_buffer.retain(|frame_dropped| {
                     if frame_dropped.client_stats.target_timestamp < target_timestamp {
-                        frame_client_stats_clone.frame_interarrival += frame_dropped.client_stats.frame_interarrival;
+                        frame_client_stats_clone.frame_interarrival +=
+                            frame_dropped.client_stats.frame_interarrival;
                         frame_client_stats_clone.rx_bytes += frame_dropped.client_stats.rx_bytes;
-                        frame_client_stats_clone.duplicated_shard_counter += frame_dropped.client_stats.duplicated_shard_counter;
-                        frame_client_stats_clone.rx_shard_counter += frame_dropped.client_stats.rx_shard_counter;
-                        frame_client_stats_clone.frames_skipped += frame_dropped.client_stats.frames_skipped;
-                        frame_client_stats_clone.frames_dropped += frame_dropped.client_stats.frames_dropped + 1;
+                        frame_client_stats_clone.duplicated_shard_counter +=
+                            frame_dropped.client_stats.duplicated_shard_counter;
+                        frame_client_stats_clone.rx_shard_counter +=
+                            frame_dropped.client_stats.rx_shard_counter;
+                        frame_client_stats_clone.frames_skipped +=
+                            frame_dropped.client_stats.frames_skipped;
+                        frame_client_stats_clone.frames_dropped +=
+                            frame_dropped.client_stats.frames_dropped + 1;
                         false
                     } else {
                         true
                     }
                 });
-                
+
                 Some(frame_client_stats_clone)
             } else {
                 None
