@@ -164,7 +164,6 @@ impl StatisticsTab {
                 fn label(ui: &mut Ui, text: &str, value_s: f32, color: Color32) {
                     ui.colored_label(color, &format!("{text}: {:.2}ms", value_s * 1000.0));
                 }
-
                 label(
                     ui,
                     "Total latency",
@@ -233,7 +232,7 @@ impl StatisticsTab {
         let mut data = statistics::Data::new(
             self.history
                 .iter()
-                .map(|stats| stats.ow_delay_s as f64)
+                .map(|stats| stats.ow_delay_ms as f64)
                 .collect::<Vec<_>>(),
         );
         self.draw_graph(
@@ -251,16 +250,16 @@ impl StatisticsTab {
                     let pointer_graphstatistics = &self.history[i];
                     // new stats
 
-                    let value_jitt = pointer_graphstatistics.interarrival_jitter_s;
+                    let value_jitt = pointer_graphstatistics.interarrival_jitter_ms;
                     interarrival_jitter.push(to_screen_trans * pos2(i as f32, value_jitt));
 
-                    let value_owd = pointer_graphstatistics.ow_delay_s;
+                    let value_owd = pointer_graphstatistics.ow_delay_ms;
                     ow_delay.push(to_screen_trans * pos2(i as f32, value_owd));
 
                     let value_thr = pointer_graphstatistics.threshold_gcc;
                     threshold_gcc.push(to_screen_trans * pos2(i as f32, value_thr));
 
-                    let val_std = pointer_graphstatistics.frame_jitter_s;
+                    let val_std = pointer_graphstatistics.frame_jitter_ms;
                     frame_interarrival_last_std.push(to_screen_trans * pos2(i as f32, val_std));
                 }
                 draw_lines(painter, interarrival_jitter, Color32::RED);
@@ -279,32 +278,30 @@ impl StatisticsTab {
                         ui.colored_label(color, &format!("{text}: {:.7}", value));
                     }
                 }
-
                 let graphstats = stats;
-
                 maybe_label(
                     ui,
-                    "Jitter Average",
-                    Some(graphstats.interarrival_jitter_s),
-                    Color32::WHITE,
+                    "Shard Interarrival jitter",
+                    Some(graphstats.interarrival_jitter_ms),
+                    Color32::RED,
                 );
                 maybe_label(
                     ui,
                     "Filtered OW Delay",
-                    Some(graphstats.ow_delay_s),
-                    Color32::GRAY,
+                    Some(graphstats.ow_delay_ms),
+                    Color32::BLUE,
                 );
                 maybe_label(
                     ui,
                     "Threshold from GCC",
                     Some(graphstats.threshold_gcc),
-                    Color32::LIGHT_BLUE,
+                    Color32::GOLD,
                 );
                 maybe_label(
                     ui,
                     "Frame interarrival std (frame jitter).",
-                    Some(graphstats.frame_jitter_s),
-                    Color32::GRAY,
+                    Some(graphstats.frame_jitter_ms),
+                    Color32::LIGHT_YELLOW,
                 );
             },
         )
@@ -335,9 +332,9 @@ impl StatisticsTab {
                     dup_shards.push(to_screen_trans * pos2(i as f32, val_dups as f32));
                 }
 
-                draw_lines(painter, frameloss, Color32::GRAY);
-                draw_lines(painter, shardloss, graph_colors::TRANSCODE);
-                draw_lines(painter, dup_shards, graph_colors::NETWORK);
+                draw_lines(painter, frameloss, Color32::LIGHT_BLUE);
+                draw_lines(painter, shardloss, Color32::LIGHT_RED);
+                draw_lines(painter, dup_shards, Color32::DARK_GREEN);
             },
             |ui, stats| {
                 fn maybe_label(
@@ -355,19 +352,19 @@ impl StatisticsTab {
                     ui,
                     "Frame Loss",
                     Some(graphstats.frame_loss as f32),
-                    Color32::DARK_BLUE,
+                    Color32::LIGHT_BLUE,
                 );
                 maybe_label(
                     ui,
                     "Shard Loss",
                     Some(graphstats.shards_lost as f32),
-                    Color32::DARK_GREEN,
+                    Color32::LIGHT_RED,
                 );
                 maybe_label(
                     ui,
                     "Shards Duplicated",
                     Some(graphstats.shards_duplicated as f32),
-                    Color32::LIGHT_BLUE,
+                    Color32::DARK_GREEN,
                 );
             },
         )
@@ -377,7 +374,7 @@ impl StatisticsTab {
         let mut data = statistics::Data::new(
             self.history
                 .iter()
-                .map(|stats| stats.frame_interarrival_s as f64)
+                .map(|stats| stats.frame_interarrival_ms as f64)
                 .collect::<Vec<_>>(),
         );
         self.draw_graph(
@@ -392,10 +389,10 @@ impl StatisticsTab {
                 for i in 0..GRAPH_HISTORY_SIZE {
                     let pointer_graphstatistics = &self.history[i];
                     // new stats
-                    let fs = pointer_graphstatistics.frame_span_s;
+                    let fs = pointer_graphstatistics.frame_span_ms;
                     frame_span.push(to_screen_trans * pos2(i as f32, fs as f32));
 
-                    let fi = pointer_graphstatistics.frame_interarrival_s;
+                    let fi = pointer_graphstatistics.frame_interarrival_ms;
                     frame_interarrival.push(to_screen_trans * pos2(i as f32, fi as f32));
                 }
 
@@ -418,14 +415,14 @@ impl StatisticsTab {
                 maybe_label(
                     ui,
                     "Frame span",
-                    Some(graphstats.frame_span_s as f32),
-                    Color32::DARK_BLUE,
+                    Some(graphstats.frame_span_ms as f32),
+                    Color32::LIGHT_BLUE,
                 );
                 maybe_label(
                     ui,
                     "Frame Interarrival",
-                    Some(graphstats.frame_interarrival_s as f32),
-                    Color32::DARK_GREEN,
+                    Some(graphstats.frame_interarrival_ms as f32),
+                    Color32::LIGHT_RED,
                 );
             },
         )
@@ -451,10 +448,13 @@ impl StatisticsTab {
                 let mut application_throughput_bps: Vec<Pos2> =
                     Vec::with_capacity(GRAPH_HISTORY_SIZE);
 
+                let mut requested = Vec::with_capacity(GRAPH_HISTORY_SIZE);
+
+
                 for i in 0..GRAPH_HISTORY_SIZE {
 
                     let pointer_graphstatistics = &self.history[i];
-
+                    let nom_br = &self.history[i].nominal_bitrate;
                     // new stats
 
                     let value_nw = pointer_graphstatistics.network_throughput_bps;
@@ -467,11 +467,16 @@ impl StatisticsTab {
                     let value_app = pointer_graphstatistics.application_throughput_bps;
                     application_throughput_bps
                         .push(to_screen_trans * pos2(i as f32, value_app / 1e6));
+
+                    requested.push(to_screen_trans * pos2(i as f32, nom_br.requested_bps / 1e6));
+
                 }
 
                 draw_lines(painter, network_throughput_bps, Color32::LIGHT_BLUE);
                 draw_lines(painter, peak_network_throughput_bps, Color32::LIGHT_RED);
-                draw_lines(painter, application_throughput_bps, Color32::GREEN);
+                draw_lines(painter, application_throughput_bps, Color32::LIGHT_YELLOW);
+                draw_lines(painter, requested, theme::OK_GREEN);
+
             },
             |ui, stats| {
                 fn maybe_label(
@@ -485,6 +490,7 @@ impl StatisticsTab {
                     }
                 }
                 let graphstats = stats;
+                let n = &stats.nominal_bitrate; 
 
                
                 maybe_label(
@@ -505,6 +511,8 @@ impl StatisticsTab {
                     Some(graphstats.application_throughput_bps),
                     Color32::GREEN,
                 );
+                maybe_label(ui, "Requested", Some(n.requested_bps), theme::OK_GREEN);
+
             },
         )
     }

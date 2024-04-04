@@ -420,7 +420,7 @@ impl StatisticsManager {
                         .get_average()
                         .as_secs_f32()
                         * 1000.,
-                    frame_jitter_ms: self.frame_jitter,
+                    frame_jitter_ms: self.frame_jitter * 1000.0,
                     packets_lost_total: self.packets_lost_total,
                     packets_lost_per_sec: (self.packets_lost_partial_sum as f32 / interval_secs)
                         as _,
@@ -559,12 +559,12 @@ impl StatisticsManager {
                 is_idr: frame.is_idr,
                 frame_index: client_stats.frame_index as u32,
 
-                frame_span_s: client_stats.frame_span,
-                frame_interarrival_s: client_stats.frame_interarrival,
+                frame_span_ms: client_stats.frame_span * 1000.0,
+                frame_interarrival_ms: client_stats.frame_interarrival * 1000.0,
 
-                interarrival_jitter_s: client_stats.interarrival_jitter,
-                frame_jitter_s: self.frame_jitter,
-                ow_delay_s: client_stats.ow_delay,
+                interarrival_jitter_ms: client_stats.interarrival_jitter * 1000.0,
+                frame_jitter_ms: self.frame_jitter * 1000.0,
+                ow_delay_ms: client_stats.ow_delay * 1000.0,
 
                 network_throughput_bps: network_throughput_bps,
                 peak_network_throughput_bps: peak_network_throughput_bps,

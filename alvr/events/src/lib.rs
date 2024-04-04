@@ -60,12 +60,12 @@ pub struct GraphStatistics {
     pub frame_index: u32,
     pub is_idr: bool,
 
-    pub frame_span_s: f32,
-    pub frame_interarrival_s: f32,
+    pub frame_span_ms: f32,
+    pub frame_interarrival_ms: f32,
 
-    pub interarrival_jitter_s: f32,
-    pub frame_jitter_s: f32, 
-    pub ow_delay_s: f32,
+    pub interarrival_jitter_ms: f32,
+    pub frame_jitter_ms: f32, 
+    pub ow_delay_ms: f32,
 
     pub network_throughput_bps: f32,
     pub peak_network_throughput_bps: f32,
