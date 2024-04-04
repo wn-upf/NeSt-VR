@@ -51,10 +51,11 @@ impl StatisticsTab {
                 self.draw_fps_graph(ui, available_width);
                 self.draw_bitrate_graph(ui, available_width);
                 self.draw_3throughput_graphs(ui, available_width);
-                self.draw_statistics_overview(ui, stats);
                 self.draw_jitter(ui, available_width);
                 self.draw_frameloss(ui, available_width);
                 self.draw_frame_span_interarrival(ui, available_width);
+                self.draw_statistics_overview(ui, stats);
+
             });
         } else {
             ui.heading("No statistics available");
