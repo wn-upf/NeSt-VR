@@ -63,13 +63,13 @@ pub struct GraphStatistics {
     pub frame_span_s: f32,
     pub frame_interarrival_s: f32,
 
-    pub interarrival_jitter: f32,
-    pub frame_interarrival_last_std: f32, 
-    pub ow_delay: f32,
+    pub interarrival_jitter_s: f32,
+    pub frame_jitter_s: f32, 
+    pub ow_delay_s: f32,
 
     pub network_throughput_bps: f32,
     pub peak_network_throughput_bps: f32,
-    pub ema_peak_throughput: f32, 
+    pub ema_peak_throughput_bps: f32, 
     pub application_throughput_bps: f32,
 
     pub frames_dropped: u32,

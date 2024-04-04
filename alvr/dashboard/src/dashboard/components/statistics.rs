@@ -233,7 +233,7 @@ impl StatisticsTab {
         let mut data = statistics::Data::new(
             self.history
                 .iter()
-                .map(|stats| stats.ow_delay as f64)
+                .map(|stats| stats.ow_delay_s as f64)
                 .collect::<Vec<_>>(),
         );
         self.draw_graph(
@@ -251,16 +251,16 @@ impl StatisticsTab {
                     let pointer_graphstatistics = &self.history[i];
                     // new stats
 
-                    let value_jitt = pointer_graphstatistics.interarrival_jitter;
+                    let value_jitt = pointer_graphstatistics.interarrival_jitter_s;
                     interarrival_jitter.push(to_screen_trans * pos2(i as f32, value_jitt));
 
-                    let value_owd = pointer_graphstatistics.ow_delay;
+                    let value_owd = pointer_graphstatistics.ow_delay_s;
                     ow_delay.push(to_screen_trans * pos2(i as f32, value_owd));
 
                     let value_thr = pointer_graphstatistics.threshold_gcc;
                     threshold_gcc.push(to_screen_trans * pos2(i as f32, value_thr));
 
-                    let val_std = pointer_graphstatistics.frame_interarrival_last_std;
+                    let val_std = pointer_graphstatistics.frame_jitter_s;
                     frame_interarrival_last_std.push(to_screen_trans * pos2(i as f32, val_std));
                 }
                 draw_lines(painter, interarrival_jitter, Color32::RED);
@@ -285,13 +285,13 @@ impl StatisticsTab {
                 maybe_label(
                     ui,
                     "Jitter Average",
-                    Some(graphstats.interarrival_jitter),
+                    Some(graphstats.interarrival_jitter_s),
                     Color32::WHITE,
                 );
                 maybe_label(
                     ui,
                     "Filtered OW Delay",
-                    Some(graphstats.ow_delay),
+                    Some(graphstats.ow_delay_s),
                     Color32::GRAY,
                 );
                 maybe_label(
@@ -302,8 +302,8 @@ impl StatisticsTab {
                 );
                 maybe_label(
                     ui,
-                    "Frame interarrival std dev.",
-                    Some(graphstats.frame_interarrival_last_std),
+                    "Frame interarrival std (frame jitter).",
+                    Some(graphstats.frame_jitter_s),
                     Color32::GRAY,
                 );
             },
@@ -435,7 +435,7 @@ impl StatisticsTab {
         let mut data = statistics::Data::new(
             self.history
                 .iter()
-                .map(|stats| stats.ema_peak_throughput as f64)
+                .map(|stats| stats.ema_peak_throughput_bps as f64)
                 .collect::<Vec<_>>(),
         );
         self.draw_graph(
@@ -460,7 +460,7 @@ impl StatisticsTab {
                     let value_nw = pointer_graphstatistics.network_throughput_bps;
                     network_throughput_bps.push(to_screen_trans * pos2(i as f32, value_nw / 1e6));
 
-                    let value_pk = pointer_graphstatistics.ema_peak_throughput;
+                    let value_pk = pointer_graphstatistics.ema_peak_throughput_bps;
                     peak_network_throughput_bps
                         .push(to_screen_trans * pos2(i as f32, value_pk / 1e6));
 
@@ -496,7 +496,7 @@ impl StatisticsTab {
                 maybe_label(
                     ui,
                     "Peak Throughput",
-                    Some(graphstats.ema_peak_throughput),
+                    Some(graphstats.ema_peak_throughput_bps),
                     Color32::LIGHT_RED,
                 );
                 maybe_label(

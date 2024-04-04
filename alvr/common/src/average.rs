@@ -33,6 +33,9 @@ impl SlidingWindowAverage<f32> {
     }
 
     pub fn get_std(&self) -> f32 {
+        if self.history_buffer.len() < 2 {
+            return 0.;
+        }
         let average = self.get_average();
         let variance = self
             .history_buffer

@@ -94,18 +94,19 @@ pub struct StatisticsManager {
 
     frame_interval: Duration,
 
-    frame_interarrival_average: SlidingWindowAverage<f32>,  
-    frame_interarrival_last_std: f32, 
+    frame_interarrival_average: SlidingWindowAverage<f32>,
+    frame_jitter: f32,
 
-    stats_history_buffer: VecDeque<HistoryFrame>,
-    map_frames_spf: HashMap<u32, usize>,
+    is_first_stats: bool,
 
     prev_highest_shard: i32,
     prev_highest_frame: i32,
 
-    ema_peak_throughput: f32,
-    last_peak_throughput_measure: Instant, 
-    
+    ema_peak_throughput_bps: f32,
+    last_peak_t_measure: Instant,
+
+    stats_history_buffer: VecDeque<HistoryFrame>,
+    map_frames_spf: HashMap<u32, usize>,
 }
 
 impl StatisticsManager {
@@ -163,15 +164,18 @@ impl StatisticsManager {
             frame_interval: nominal_server_frame_interval,
 
             frame_interarrival_average: SlidingWindowAverage::new(0., max_history_size),
-            frame_interarrival_last_std: 0., 
+            frame_jitter: 0.,
 
-            stats_history_buffer: VecDeque::new(),
-            map_frames_spf: HashMap::new(),
+            is_first_stats: true,
 
             prev_highest_shard: -1,
             prev_highest_frame: 0,
-            ema_peak_throughput: 30_000_000.0, 
-            last_peak_throughput_measure: Instant::now(),
+
+            ema_peak_throughput_bps: 0.,
+            last_peak_t_measure: Instant::now(),
+
+            stats_history_buffer: VecDeque::new(),
+            map_frames_spf: HashMap::new(),
         }
     }
 
@@ -287,8 +291,8 @@ impl StatisticsManager {
     }
 
     // Called every frame. Some statistics are reported once every frame
-    // Returns network latency
-    pub fn report_statistics(&mut self, client_stats: ClientStatistics) -> (Duration, f32, f32)  {
+    // Returns network latency, frame interarrival average and std (jitter)
+    pub fn report_statistics(&mut self, client_stats: ClientStatistics) -> (Duration, f32, f32) {
         if let Some(frame) = self
             .stats_history_buffer
             .iter_mut()
@@ -358,10 +362,14 @@ impl StatisticsManager {
                     .max(Duration::from_millis(1))
                     .as_secs_f32();
 
-            self.frame_interarrival_average
-                .submit_sample(client_stats.frame_interarrival);
-            
-            self.frame_interarrival_last_std = self.frame_interarrival_average.get_std() * 1000.;
+            if !self.is_first_stats {
+                self.frame_interarrival_average
+                    .submit_sample(client_stats.frame_interarrival);
+            } else {
+                self.is_first_stats = false
+            }
+
+            self.frame_jitter = self.frame_interarrival_average.get_std();
 
             if self.last_full_report_instant + FULL_REPORT_INTERVAL < Instant::now() {
                 self.last_full_report_instant += FULL_REPORT_INTERVAL;
@@ -412,7 +420,7 @@ impl StatisticsManager {
                         .get_average()
                         .as_secs_f32()
                         * 1000.,
-                    frame_jitter_ms: self.frame_interarrival_last_std,
+                    frame_jitter_ms: self.frame_jitter,
                     packets_lost_total: self.packets_lost_total,
                     packets_lost_per_sec: (self.packets_lost_partial_sum as f32 / interval_secs)
                         as _,
@@ -460,11 +468,21 @@ impl StatisticsManager {
                 0.0
             };
 
-            let delta_peak_t = Instant::now() - self.last_peak_throughput_measure; 
-            let time_const = Duration::from_secs(5).as_secs_f32(); 
-            self.ema_peak_throughput = delta_peak_t.as_secs_f32()/time_const * peak_network_throughput_bps + (1.0 - delta_peak_t.as_secs_f32()/time_const) * self.ema_peak_throughput;        
-            self.last_peak_throughput_measure = Instant::now();
-        
+            let now = Instant::now();
+
+            if self.ema_peak_throughput_bps == 0. {
+                self.ema_peak_throughput_bps = peak_network_throughput_bps;
+            } else {
+                let delta_peak_t = now.duration_since(self.last_peak_t_measure);
+                let time_const = Duration::from_secs(5).as_secs_f32();
+
+                self.ema_peak_throughput_bps = delta_peak_t.as_secs_f32() / time_const
+                    * peak_network_throughput_bps
+                    + (1.0 - delta_peak_t.as_secs_f32() / time_const)
+                        * self.ema_peak_throughput_bps;
+            }
+            self.last_peak_t_measure = now;
+
             let application_throughput_bps = if client_stats.frame_interarrival != 0.0 {
                 client_stats.bytes_in_frame_app as f32 * 8.0 / client_stats.frame_interarrival
             } else {
@@ -544,13 +562,13 @@ impl StatisticsManager {
                 frame_span_s: client_stats.frame_span,
                 frame_interarrival_s: client_stats.frame_interarrival,
 
-                interarrival_jitter: client_stats.interarrival_jitter,
-                frame_interarrival_last_std: self.frame_interarrival_last_std, 
-                ow_delay: client_stats.ow_delay,
+                interarrival_jitter_s: client_stats.interarrival_jitter,
+                frame_jitter_s: self.frame_jitter,
+                ow_delay_s: client_stats.ow_delay,
 
                 network_throughput_bps: network_throughput_bps,
                 peak_network_throughput_bps: peak_network_throughput_bps,
-                ema_peak_throughput: self.ema_peak_throughput, 
+                ema_peak_throughput_bps: self.ema_peak_throughput_bps,
                 application_throughput_bps: application_throughput_bps,
 
                 frames_skipped: client_stats.frames_skipped,
@@ -564,9 +582,13 @@ impl StatisticsManager {
                 internal_state_gcc: client_stats.internal_state_gcc,
             }));
 
-            (network_latency, (client_stats.frames_skipped + client_stats.frames_dropped) as f32,  self.frame_interarrival_last_std) //return tuple for BitrateManager in connection.rs
+            (
+                network_latency,
+                self.frame_interarrival_average.get_average(),
+                self.frame_jitter,
+            )
         } else {
-            (Duration::ZERO,  0.0, 0.0) 
+            (Duration::ZERO, 0.0, 0.0)
         }
     }
 
