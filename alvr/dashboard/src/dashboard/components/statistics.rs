@@ -196,7 +196,7 @@ impl StatisticsTab {
         let lower_quantile = data.quantile(1.0 - UPPER_QUANTILE);
 
         let max = upper_quantile + (upper_quantile - lower_quantile);
-        let min = lower_quantile - (upper_quantile - lower_quantile);
+        let min = 0.0; 
 
         self.draw_graph(
             ui,
@@ -263,10 +263,11 @@ impl StatisticsTab {
                     let val_std = pointer_graphstatistics.frame_jitter_ms;
                     frame_interarrival_last_std.push(to_screen_trans * pos2(i as f32, val_std));
                 }
-                draw_lines(painter, interarrival_jitter, Color32::RED);
                 draw_lines(painter, ow_delay, Color32::BLUE);
                 draw_lines(painter, threshold_gcc, Color32::GOLD);
                 draw_lines(painter, frame_interarrival_last_std, Color32::LIGHT_YELLOW); 
+                draw_lines(painter, interarrival_jitter, Color32::RED);
+
             },
             |ui, stats| {
                 fn maybe_label(
@@ -396,9 +397,8 @@ impl StatisticsTab {
                     let fi = pointer_graphstatistics.frame_interarrival_ms;
                     frame_interarrival.push(to_screen_trans * pos2(i as f32, fi as f32));
                 }
-
-                draw_lines(painter, frame_span, Color32::LIGHT_BLUE);
                 draw_lines(painter, frame_interarrival, Color32::LIGHT_RED);
+                draw_lines(painter, frame_span, Color32::LIGHT_BLUE);
             },
             |ui, stats| {
                 fn maybe_label(
@@ -415,15 +415,15 @@ impl StatisticsTab {
 
                 maybe_label(
                     ui,
-                    "Frame span",
-                    Some(graphstats.frame_span_ms as f32),
-                    Color32::LIGHT_BLUE,
-                );
-                maybe_label(
-                    ui,
                     "Frame Interarrival",
                     Some(graphstats.frame_interarrival_ms as f32),
                     Color32::LIGHT_RED,
+                );
+                maybe_label(
+                    ui,
+                    "Frame span",
+                    Some(graphstats.frame_span_ms as f32),
+                    Color32::LIGHT_BLUE,
                 );
             },
         )
