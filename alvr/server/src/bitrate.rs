@@ -1,4 +1,4 @@
-use crate:: FfiDynamicEncoderParams;
+use crate::FfiDynamicEncoderParams;
 use alvr_common::SlidingWindowAverage;
 use alvr_events::NominalBitrateStats;
 use alvr_session::{
@@ -8,6 +8,9 @@ use std::{
     collections::VecDeque,
     time::{Duration, Instant},
 };
+
+use rand::distributions::Uniform;
+use rand::{thread_rng, Rng};
 
 const UPDATE_INTERVAL: Duration = Duration::from_secs(1);
 
@@ -30,7 +33,6 @@ pub struct BitrateManager {
     last_target_bitrate: f32,
 
     frame_interarrival_avg: f32,
-    frame_jitter: f32,
 }
 
 impl BitrateManager {
@@ -61,7 +63,6 @@ impl BitrateManager {
             last_target_bitrate: 30_000_000.0,
 
             frame_interarrival_avg: 0.,
-            frame_jitter: 0.,
         }
     }
 
@@ -115,13 +116,11 @@ impl BitrateManager {
         decoder_latency: Duration,
 
         frame_interarrival_avg: f32,
-        frame_jitter: f32,
     ) {
         if network_latency.is_zero() {
             return;
         }
         self.frame_interarrival_avg = frame_interarrival_avg;
-        self.frame_jitter = frame_jitter;
 
         self.network_latency_average.submit_sample(network_latency);
 
@@ -200,8 +199,13 @@ impl BitrateManager {
                 max_bitrate_mbps,
                 min_bitrate_mbps,
                 steps_mbps,
-                threshold_jitter,
+                threshold_random_uniform,
             } => {
+                //define generator and sample from uniform dist. for heuristic
+                let mut rng = thread_rng();
+                let uniform_dist = Uniform::new(0.0, 1.0);
+                let random_prob = rng.sample(uniform_dist);
+
                 fn minmax_bitrate(
                     bitrate_bps: f32,
                     max_bitrate_mbps: &Switch<f32>,
@@ -223,19 +227,18 @@ impl BitrateManager {
                 let initial_bitrate = self.last_target_bitrate;
                 let mut bitrate_bps: f32 = initial_bitrate;
 
-                if let Switch::Enabled(threshold) = threshold_jitter {
-                    // TODO: define a threshold for jitter
+                if let Switch::Enabled(threshold) = threshold_random_uniform {
                     if let Switch::Enabled(steps) = steps_mbps {
                         let frame_interval = self.frame_interval_average.get_average();
                         let framerate = 1.0 / frame_interval.as_secs_f32().min(1.0);
 
                         if (1. / self.frame_interarrival_avg) >= 0.95 * framerate {
                             if self.network_latency_average.get_average() > frame_interval {
-                                if self.frame_jitter >= *threshold {
+                                if random_prob >= *threshold {
                                     bitrate_bps = bitrate_bps - *steps; // decrease bitrate by 1 step
                                 }
                             } else {
-                                if self.frame_jitter <= *threshold {
+                                if random_prob <= *threshold {
                                     bitrate_bps = bitrate_bps + *steps; // increase bitrate by 1 step
                                 }
                             }

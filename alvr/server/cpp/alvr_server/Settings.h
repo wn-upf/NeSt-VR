@@ -73,8 +73,8 @@ class Settings {
     int64_t m_nvencRcAverageBitrate;
     bool m_nvencEnableWeightedPrediction;
 
-    bool m_aggressiveKeyframeResend;
-
+    uint64_t m_minimumIdrIntervalMs;
+    
     bool m_enableViveTrackerProxy = false;
     bool m_TrackingRefOnly = false;
     bool m_enableLinuxVulkanAsyncCompute;

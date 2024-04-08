@@ -291,8 +291,8 @@ impl StatisticsManager {
     }
 
     // Called every frame. Some statistics are reported once every frame
-    // Returns network latency, frame interarrival average and std (jitter)
-    pub fn report_statistics(&mut self, client_stats: ClientStatistics) -> (Duration, f32, f32) {
+    // Returns network latency, frame interarrival average
+    pub fn report_statistics(&mut self, client_stats: ClientStatistics) -> (Duration, f32) {
         if let Some(frame) = self
             .stats_history_buffer
             .iter_mut()
@@ -585,10 +585,9 @@ impl StatisticsManager {
             (
                 network_latency,
                 self.frame_interarrival_average.get_average(),
-                self.frame_jitter,
             )
         } else {
-            (Duration::ZERO, 0.0, 0.0)
+            (Duration::ZERO, 0.0)
         }
     }
 

@@ -29,6 +29,7 @@ chrono = "0.4"
 fern = "0.6"
 futures = "0.3"
 headers = "0.3"
+rand = "0.8.5"
 hyper = { version = "0.14", features = [
     "http2",
     "server",
