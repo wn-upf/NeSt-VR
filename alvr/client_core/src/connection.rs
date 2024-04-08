@@ -337,7 +337,7 @@ fn connection_pipeline(
     let statistics_sender = stream_socket.request_stream(STATISTICS);
 
 
-    let last_instant_IDR_client = Instant::now(); 
+    let mut last_instant_IDR_client = Instant::now(); 
     let interval_IDR_seconds_f32 = settings.connection.client_idr_refresh_interval_ms as f32 / 1000.0;  
 
     let video_receive_thread = thread::spawn(move || {
@@ -376,6 +376,7 @@ fn connection_pipeline(
                 if let Some(sender) = &mut *CONTROL_SENDER.lock(){
                     sender.send(&ClientControlPacket::RequestIdr).ok(); 
                 } 
+                last_instant_IDR_client = Instant::now(); 
             }
 
             if let Some(stats) = &mut *STATISTICS_MANAGER.lock() {
