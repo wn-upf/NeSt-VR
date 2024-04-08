@@ -364,6 +364,7 @@ dependencies = [
  "headers",
  "hyper",
  "pkg-config",
+ "rand",
  "reqwest",
  "rosc",
  "serde",

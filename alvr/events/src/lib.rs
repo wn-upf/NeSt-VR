@@ -76,7 +76,7 @@ pub struct GraphStatistics {
     pub frames_skipped: u32,
     pub frame_loss: u32,
 
-    pub shards_lost: usize,
+    pub shards_lost: isize,
     pub shards_duplicated: u32,
 
     pub threshold_gcc: f32,

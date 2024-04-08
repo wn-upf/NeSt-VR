@@ -490,7 +490,7 @@ impl StatisticsManager {
             };
 
             let mut shards_sent: usize = 0;
-            let shards_lost: usize;
+            let shards_lost: isize;
 
             if self.prev_highest_frame == client_stats.highest_rx_frame_index as i32 {
                 if self.prev_highest_shard < client_stats.highest_rx_shard_index as i32 {
@@ -518,7 +518,7 @@ impl StatisticsManager {
                     .map(|(_, val)| *val)
                     .sum();
 
-                let shards_from_actual: usize = client_stats.highest_rx_shard_index as usize + 1;
+                let shards_from_actual = client_stats.highest_rx_shard_index as usize + 1;
 
                 shards_sent = shards_from_prev + shards_from_inbetween + shards_from_actual;
 
@@ -537,7 +537,7 @@ impl StatisticsManager {
                 }
             }
 
-            shards_lost = shards_sent - client_stats.rx_shard_counter as usize;
+            shards_lost = shards_sent as isize - client_stats.rx_shard_counter as isize;
 
             // todo: use target timestamp in nanoseconds. the dashboard needs to use the first
             // timestamp as the graph time origin.
