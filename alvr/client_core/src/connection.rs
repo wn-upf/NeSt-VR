@@ -338,7 +338,7 @@ fn connection_pipeline(
 
 
     let last_instant_IDR_client = Instant::now(); 
-    let interval_IDR_seconds_f32 = settings.connection.minimum_idr_interval_ms as f32 / 1000.0;  
+    let interval_IDR_seconds_f32 = settings.connection.client_idr_refresh_interval_ms as f32 / 1000.0;  
 
     let video_receive_thread = thread::spawn(move || {
         let mut stream_corrupted = false;

@@ -1004,6 +1004,11 @@ For now works only on Windows+Nvidia"#
     #[schema(gui(slider(min = 5, max = 1000, step = 5)), suffix = "ms")]
     pub minimum_idr_interval_ms: u64,
 
+    #[schema(strings(display_name = "Minimum IDR interval"))]
+    #[schema(flag = "steamvr-restart")]
+    #[schema(gui(slider(min = 5, max = 1000, step = 5)), suffix = "ms")]
+    pub client_idr_refresh_interval_ms: u64,
+
     #[schema(strings(
         help = "This script will be ran when the headset connects. Env var ACTION will be set to `connect`."
     ))]
@@ -1608,6 +1613,7 @@ pub fn session_settings_default() -> SettingsDefault {
             max_queued_server_video_frames: 1024,
             avoid_video_glitching: false,
             minimum_idr_interval_ms: 100,
+            client_idr_refresh_interval_ms: 125,
             on_connect_script: "".into(),
             on_disconnect_script: "".into(),
             packet_size: 1400,
