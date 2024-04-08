@@ -336,6 +336,10 @@ fn connection_pipeline(
         stream_socket.subscribe_to_stream::<Haptics>(HAPTICS, MAX_UNREAD_PACKETS);
     let statistics_sender = stream_socket.request_stream(STATISTICS);
 
+
+    let last_instant_IDR_client = Instant::now(); 
+    let interval_IDR_seconds_f32 = settings.connection.minimum_idr_interval_ms as f32 / 1000.0;  
+
     let video_receive_thread = thread::spawn(move || {
         let mut stream_corrupted = false;
         while is_streaming() {
@@ -365,6 +369,14 @@ fn connection_pipeline(
 
             videoStats.internal_state_gcc = data.get_gcc_state();
             videoStats.threshold_gcc = data.get_adaptive_threshold();
+
+            // periodically request IDR using value from session settings minimum_idr_interval_ms, 
+
+            if Instant::now().saturating_duration_since(last_instant_IDR_client).as_secs_f32() >= interval_IDR_seconds_f32 {
+                if let Some(sender) = &mut *CONTROL_SENDER.lock(){
+                    sender.send(&ClientControlPacket::RequestIdr).ok(); 
+                } 
+            }
 
             if let Some(stats) = &mut *STATISTICS_MANAGER.lock() {
                 stats.report_video_packet_received(header.timestamp);
