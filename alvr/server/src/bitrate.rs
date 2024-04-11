@@ -1,5 +1,5 @@
 use crate::FfiDynamicEncoderParams;
-use alvr_common::SlidingWindowAverage;
+use alvr_common::{warn, SlidingWindowAverage};
 use alvr_events::NominalBitrateStats;
 use alvr_session::{
     settings_schema::Switch, BitrateAdaptiveFramerateConfig, BitrateConfig, BitrateMode,
@@ -226,24 +226,28 @@ impl BitrateManager {
 
                 let initial_bitrate = self.last_target_bitrate;
                 let mut bitrate_bps: f32 = initial_bitrate;
-
                 if let Switch::Enabled(threshold) = threshold_random_uniform {
                     if let Switch::Enabled(steps) = steps_mbps {
-                        let frame_interval = self.frame_interval_average.get_average();
+                        
+                         
+                        let frame_interval = self.frame_interval_average.get_average(); 
                         let framerate = 1.0 / frame_interval.as_secs_f32().min(1.0);
-
+                        warn!("frame interval : {:?}, framerate: {:?}, interarrival{:?},  random_prob{:?}, network_latency_avg {:?}", frame_interval, framerate, self.frame_interarrival_avg,  random_prob, self.network_latency_average.get_average() );
+                        
+                        let steps_bps = *steps * 1E6;  
+                        
                         if (1. / self.frame_interarrival_avg) >= 0.95 * framerate {
                             if self.network_latency_average.get_average() > frame_interval {
                                 if random_prob >= *threshold {
-                                    bitrate_bps = bitrate_bps - *steps; // decrease bitrate by 1 step
+                                    bitrate_bps = bitrate_bps - steps_bps; // decrease bitrate by 1 step
                                 }
                             } else {
                                 if random_prob <= *threshold {
-                                    bitrate_bps = bitrate_bps + *steps; // increase bitrate by 1 step
+                                    bitrate_bps = bitrate_bps + steps_bps; // increase bitrate by 1 step
                                 }
                             }
                         } else {
-                            bitrate_bps = bitrate_bps - *steps; // decrease bitrate by 1 step
+                            bitrate_bps = bitrate_bps - steps_bps; // decrease bitrate by 1 step
                         }
                         bitrate_bps =
                             minmax_bitrate(bitrate_bps, max_bitrate_mbps, min_bitrate_mbps);
