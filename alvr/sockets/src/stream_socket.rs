@@ -895,19 +895,6 @@ impl StreamSocket {
             &mut components.discarded_shards_sink
         };
 
-        if !in_progress_packet
-            .received_shard_indices
-            .contains(&shard_recv_state_mut.shard_index)
-        {
-            if shard_recv_state_mut.stream_id == VIDEO {
-                self.rx_shard_counter += 1;
-            }
-        } else {
-            if shard_recv_state_mut.stream_id == VIDEO {
-                self.duplicated_shard_counter += 1;
-            }
-        }
-
         let max_shard_data_size = self.max_packet_size - SHARD_PREFIX_SIZE;
         // Note: there is no prefix offset, since we want to write the prefix too.
         let packet_start_index = shard_recv_state_mut.shard_index * max_shard_data_size;
@@ -953,14 +940,21 @@ impl StreamSocket {
                 .copy_from_slice(&shard_recv_state_mut.overwritten_data_backup.take().unwrap());
         }
 
-        if !shard_recv_state_mut.should_discard {
-            if !in_progress_packet
-                .received_shard_indices
-                .contains(&shard_recv_state_mut.shard_index)
-            {
+        if !in_progress_packet
+            .received_shard_indices
+            .contains(&shard_recv_state_mut.shard_index)
+        {
+            if !shard_recv_state_mut.should_discard {
                 in_progress_packet
                     .received_shard_indices
                     .insert(shard_recv_state_mut.shard_index);
+                if shard_recv_state_mut.stream_id == VIDEO {
+                    self.rx_shard_counter += 1;
+                }
+            }
+        } else {
+            if shard_recv_state_mut.stream_id == VIDEO {
+                self.duplicated_shard_counter += 1;
             }
         }
 
@@ -1040,9 +1034,10 @@ impl StreamSocket {
                     index: shard_recv_state_mut.packet_index,
                     buffer: components
                         .in_progress_packets
-                        .remove(&shard_recv_state_mut.packet_index)
+                        .get(&shard_recv_state_mut.packet_index)
                         .unwrap()
-                        .buffer,
+                        .buffer
+                        .clone(),
                     size,
 
                     frame_index: shard_recv_state_mut.packet_index,
