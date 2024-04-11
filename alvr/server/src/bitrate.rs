@@ -232,7 +232,7 @@ impl BitrateManager {
                          
                         let frame_interval = self.frame_interval_average.get_average(); 
                         let framerate = 1.0 / frame_interval.as_secs_f32().min(1.0);
-                        warn!("frame interval : {:?}, framerate: {:?}, interarrival{:?},  random_prob{:?}, network_latency_avg {:?}", frame_interval, framerate, self.frame_interarrival_avg,  random_prob, self.network_latency_average.get_average() );
+                        // warn!("frame interval : {:?}, framerate: {:?}, interarrival{:?},  random_prob{:?}, network_latency_avg {:?}", frame_interval, framerate, self.frame_interarrival_avg,  random_prob, self.network_latency_average.get_average() );
                         
                         let steps_bps = *steps * 1E6;  
                         
