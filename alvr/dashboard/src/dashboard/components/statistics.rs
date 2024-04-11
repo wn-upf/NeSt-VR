@@ -442,7 +442,6 @@ impl StatisticsTab {
             "Throughput Peak, Application and Network",
             0.0..=(data.quantile(MIDDLE_QUANTILE) ) as f32 / 1e6,
             |painter, to_screen_trans| {
-                
                 let mut network_throughput_bps: Vec<Pos2> = Vec::with_capacity(GRAPH_HISTORY_SIZE);
                 let mut peak_network_throughput_bps: Vec<Pos2> =
                     Vec::with_capacity(GRAPH_HISTORY_SIZE);
@@ -450,7 +449,6 @@ impl StatisticsTab {
                     Vec::with_capacity(GRAPH_HISTORY_SIZE);
 
                 let mut requested = Vec::with_capacity(GRAPH_HISTORY_SIZE);
-
 
                 for i in 0..GRAPH_HISTORY_SIZE {
 
@@ -468,14 +466,11 @@ impl StatisticsTab {
                     let value_app = pointer_graphstatistics.application_throughput_bps;
                     application_throughput_bps
                         .push(to_screen_trans * pos2(i as f32, value_app / 1e6));
-
                     requested.push(to_screen_trans * pos2(i as f32, nom_br.requested_bps / 1e6));
-
                 }
-
-                draw_lines(painter, network_throughput_bps, Color32::LIGHT_BLUE);
+                draw_lines(painter, network_throughput_bps, Color32::BLUE);
                 draw_lines(painter, peak_network_throughput_bps, Color32::LIGHT_RED);
-                draw_lines(painter, application_throughput_bps, Color32::LIGHT_YELLOW);
+                draw_lines(painter, application_throughput_bps, Color32::YELLOW);
                 draw_lines(painter, requested, theme::OK_GREEN);
 
             },
@@ -498,7 +493,7 @@ impl StatisticsTab {
                     ui,
                     "Network Throughput",
                     Some(graphstats.network_throughput_bps),
-                    Color32::LIGHT_BLUE,
+                    Color32::BLUE,
                 );
                 maybe_label(
                     ui,
@@ -510,10 +505,9 @@ impl StatisticsTab {
                     ui,
                     "Application Throughput",
                     Some(graphstats.application_throughput_bps),
-                    Color32::GREEN,
+                    Color32::YELLOW,
                 );
                 maybe_label(ui, "Requested", Some(n.requested_bps), theme::OK_GREEN);
-
             },
         )
     }
