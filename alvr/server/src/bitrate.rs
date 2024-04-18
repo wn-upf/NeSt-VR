@@ -1,5 +1,5 @@
 use crate::FfiDynamicEncoderParams;
-use alvr_common::{warn, SlidingWindowAverage};
+use alvr_common::SlidingWindowAverage;
 use alvr_events::NominalBitrateStats;
 use alvr_session::{
     settings_schema::Switch, BitrateAdaptiveFramerateConfig, BitrateConfig, BitrateMode,

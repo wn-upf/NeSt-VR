@@ -813,8 +813,15 @@ impl StreamSocket {
                     rx_bytes: shard_length as u32 + header_bytes_transport,
                     rx_bytes_app: (shard_length - SHARD_PREFIX_SIZE) as u32,
                 };
+
                 let shards_map = self.map_rx.entry(packet_index).or_insert(HashMap::new());
-                shards_map.insert(shard_index, packet);
+
+                if shards_map.contains_key(&shard_index) {
+                    self.duplicated_shard_counter += 1;
+                } else {
+                    shards_map.insert(shard_index, packet);
+                    self.rx_shard_counter += 1;
+                }
 
                 self.rx_bytes += shard_length as u32 + header_bytes_transport;
 
@@ -940,21 +947,14 @@ impl StreamSocket {
                 .copy_from_slice(&shard_recv_state_mut.overwritten_data_backup.take().unwrap());
         }
 
-        if !in_progress_packet
-            .received_shard_indices
-            .contains(&shard_recv_state_mut.shard_index)
-        {
-            if !shard_recv_state_mut.should_discard {
+        if !shard_recv_state_mut.should_discard {
+            if !in_progress_packet
+                .received_shard_indices
+                .contains(&shard_recv_state_mut.shard_index)
+            {
                 in_progress_packet
                     .received_shard_indices
                     .insert(shard_recv_state_mut.shard_index);
-                if shard_recv_state_mut.stream_id == VIDEO {
-                    self.rx_shard_counter += 1;
-                }
-            }
-        } else {
-            if shard_recv_state_mut.stream_id == VIDEO {
-                self.duplicated_shard_counter += 1;
             }
         }
 
@@ -967,7 +967,7 @@ impl StreamSocket {
         // Check if packet is complete and send
         if in_progress_packet.received_shard_indices.len() == shard_recv_state_mut.shards_count {
             if shard_recv_state_mut.stream_id == VIDEO {
-                if let Some(inner_map) = self.map_rx.remove(&shard_recv_state_mut.packet_index) {
+                if let Some(inner_map) = self.map_rx.get(&shard_recv_state_mut.packet_index) {
                     let values: Vec<&ShardMapStats> = inner_map.values().collect();
                     let min_time = values.iter().map(|shard| shard.rx_instant).min().unwrap();
                     let max_time = values.iter().map(|shard| shard.rx_instant).max().unwrap();
@@ -1034,10 +1034,9 @@ impl StreamSocket {
                     index: shard_recv_state_mut.packet_index,
                     buffer: components
                         .in_progress_packets
-                        .get(&shard_recv_state_mut.packet_index)
+                        .remove(&shard_recv_state_mut.packet_index)
                         .unwrap()
-                        .buffer
-                        .clone(),
+                        .buffer,
                     size,
 
                     frame_index: shard_recv_state_mut.packet_index,
@@ -1068,19 +1067,16 @@ impl StreamSocket {
                 self.rx_shard_counter = 0;
                 self.duplicated_shard_counter = 0;
 
-                // Keep only shards with later packet index (using wrapping logic)
-                for idx in components
-                    .in_progress_packets
-                    .iter()
-                    .filter_map(|(idx, _)| {
-                        if wrapping_cmp(*idx, shard_recv_state_mut.packet_index) == Ordering::Less {
-                            Some(*idx)
-                        } else {
-                            None
-                        }
-                    })
-                {
-                    // Remove the stored data from previous frame indexes. Those frames won't be reconstructed given the while below...
+                // Keep only shards data from the latest packets (using wrapping logic)
+                let mut idxs_to_remove = Vec::new();
+                for &idx in self.map_rx.keys() {
+                    if wrapping_cmp(idx.wrapping_add(5), shard_recv_state_mut.packet_index)
+                        == Ordering::Less
+                    {
+                        idxs_to_remove.push(idx);
+                    }
+                }
+                for idx in idxs_to_remove {
                     self.map_rx.remove(&idx);
                 }
             }
