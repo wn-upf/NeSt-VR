@@ -17,12 +17,12 @@ use alvr_common::{
     once_cell::sync::Lazy,
     parking_lot::{Condvar, RwLock},
     wait_rwlock, warn, AnyhowToCon, ConResult, ConnectionError, ConnectionState, LifecycleState,
-    OptLazy, StatesWebrtc, ToCon, ALVR_VERSION,
+    OptLazy, ToCon, ALVR_VERSION,
 };
 use alvr_packets::{
-    ClientConnectionResult, ClientControlPacket, ClientStatistics, Haptics, ServerControlPacket,
-    StreamConfigPacket, Tracking, VideoPacketHeader, VideoStreamingCapabilities, AUDIO, HAPTICS,
-    STATISTICS, TRACKING, VIDEO, NetworkStatisticsPacket
+    ClientConnectionResult, ClientControlPacket, ClientStatistics, Haptics,
+    NetworkStatisticsPacket, ServerControlPacket, StreamConfigPacket, Tracking, VideoPacketHeader,
+    VideoStreamingCapabilities, AUDIO, HAPTICS, STATISTICS, TRACKING, VIDEO,
 };
 use alvr_session::{settings_schema::Switch, SessionConfig};
 use alvr_sockets::{
@@ -37,31 +37,6 @@ use std::{
     time::{Duration, Instant},
 };
 
-#[derive(Copy, Clone)]
-pub struct VideoStatsRx {
-    pub frame_index: u32,
-
-    pub frame_span: f32,
-    pub frame_interarrival: f32,
-
-    pub interarrival_jitter: f32,
-    pub ow_delay: f32,
-
-    pub rx_bytes: u32,
-    pub bytes_in_frame: u32,
-    pub bytes_in_frame_app: u32,
-
-    pub frames_skipped: u32,
-    pub frames_dropped: u32,
-
-    pub rx_shard_counter: u32,
-    pub duplicated_shard_counter: u32,
-
-    pub highest_rx_frame_index: i32,
-    pub highest_rx_shard_index: i32,
-    pub threshold_gcc: f32,
-    pub internal_state_gcc: StatesWebrtc,
-}
 #[cfg(target_os = "android")]
 use crate::audio;
 #[cfg(not(target_os = "android"))]
@@ -296,30 +271,6 @@ fn connection_pipeline(
     )?;
 
     info!("Connected to server");
-    let mut videoStats = VideoStatsRx {
-        frame_index: 0,
-
-        frame_span: 0.0,
-        frame_interarrival: 0.0,
-
-        interarrival_jitter: 0.0,
-        ow_delay: 0.0,
-
-        rx_bytes: 0,
-        bytes_in_frame: 0,
-        bytes_in_frame_app: 0,
-
-        frames_skipped: 0,
-        frames_dropped: 0,
-
-        rx_shard_counter: 0,
-        duplicated_shard_counter: 0,
-
-        highest_rx_frame_index: 0,
-        highest_rx_shard_index: 0,
-        internal_state_gcc: StatesWebrtc::NORMAL,
-        threshold_gcc: 0.0,
-    };
     {
         let config = &mut *DECODER_INIT_CONFIG.lock();
 
@@ -336,9 +287,11 @@ fn connection_pipeline(
         stream_socket.subscribe_to_stream::<Haptics>(HAPTICS, MAX_UNREAD_PACKETS);
     let statistics_sender = stream_socket.request_stream(STATISTICS);
 
+    let mut last_instant_IDR_client = Instant::now();
+    let interval_IDR_seconds_f32 =
+        settings.connection.client_idr_refresh_interval_ms as f32 / 1000.0;
 
-    let mut last_instant_IDR_client = Instant::now(); 
-    let interval_IDR_seconds_f32 = settings.connection.client_idr_refresh_interval_ms as f32 / 1000.0;  
+    let mut frames_dropped: u32 = 0; // number of frames dropped
 
     let video_receive_thread = thread::spawn(move || {
         let mut stream_corrupted = false;
@@ -349,49 +302,55 @@ fn connection_pipeline(
                 Err(ConnectionError::Other(_)) => return,
             };
 
-            videoStats.frame_index = data.get_frame_index();
-            videoStats.frame_span = data.get_frame_span();
-            videoStats.interarrival_jitter = data.get_interarrival_jitter();
-            videoStats.ow_delay = data.get_ow_delay();
-            videoStats.bytes_in_frame = data.get_bytes_in_frame();
-            videoStats.bytes_in_frame_app = data.get_bytes_in_frame_app();
-            videoStats.highest_rx_frame_index = data.get_highest_rx_frame_index();
-            videoStats.highest_rx_shard_index = data.get_highest_rx_shard_index();
+            // send frame and network statistics for every reconstructed video frame
+            if let Some(sender) = &mut *CONTROL_SENDER.lock() {
+                sender
+                    .send(&ClientControlPacket::NetworkStatistics(
+                        NetworkStatisticsPacket {
+                            // Frame specific metrics
+                            frame_index: data.get_frame_index() as i32, // index of the current frame
+                            frame_span: data.get_frame_span(),   // duration of the current frame
 
-            videoStats.frame_interarrival += data.get_frame_interarrival();
-            videoStats.rx_bytes += data.get_rx_bytes();
-            videoStats.frames_skipped += data.get_frames_skipped();
-            videoStats.rx_shard_counter += data.get_rx_shard_counter();
-            videoStats.duplicated_shard_counter += data.get_duplicated_shard_counter();
+                            bytes_in_frame: data.get_bytes_in_frame(), // bytes received for the current frame, including both prefixes and network headers
+                            bytes_in_frame_app: data.get_bytes_in_frame_app(), // bytes received for the current frame, excluding both prefixes and network headers
 
-            videoStats.internal_state_gcc = data.get_gcc_state();
-            videoStats.threshold_gcc = data.get_adaptive_threshold();
-            
-            // //send new network statistics packets every frame independently, even if the application drops them for any reason          
-            if let Some(sender) = &mut *CONTROL_SENDER.lock() {  
-                sender.send(&ClientControlPacket::NetworkStatistics(NetworkStatisticsPacket{
-                    frame_index: videoStats.frame_index,
-                    frame_span: videoStats.frame_span,
-                    frame_interarrival: videoStats.frame_interarrival, 
-                    interarrival_jitter: videoStats.interarrival_jitter, 
-                    ow_delay: videoStats.ow_delay, 
-                    rx_bytes: videoStats.rx_bytes, 
-                    bytes_in_frame: videoStats.bytes_in_frame, 
-                    bytes_in_frame_app: videoStats.bytes_in_frame_app,
-                    frames_skipped: videoStats.frames_skipped, 
-                })).ok(); 
+                            // Interval specific metrics
+                            frame_interarrival: data.get_frame_interarrival(), // time interval between consecutive frames
+
+                            interarrival_jitter: data.get_interarrival_jitter(), // measure of the variability in the time between the reception of consecutive video shards
+                            ow_delay: data.get_ow_delay(), // one-way delay of the received video shards
+
+                            frames_skipped: data.get_frames_skipped(), // number of frames skipped
+
+                            rx_bytes: data.get_rx_bytes(), // bytes received in the interval between the consecutive frames, including any prefixes and network headers
+
+                            rx_shard_counter: data.get_rx_shard_counter(), // non-duplicated video shards received during the interval between consecutive frames
+                            duplicated_shard_counter: data.get_duplicated_shard_counter(), // duplicated video shards received during the interval between consecutive frames
+
+                            highest_rx_frame_index: data.get_highest_rx_frame_index(), // index of the highest video frame received during the interval between consecutive frames
+                            highest_rx_shard_index: data.get_highest_rx_shard_index(), // index of the highest video shard received during the interval between consecutive frames
+
+                            internal_state_gcc: data.get_gcc_state(),
+                            threshold_gcc: data.get_adaptive_threshold(),
+                        },
+                    ))
+                    .ok();
             }
 
             let Ok((header, nal)) = data.get() else {
                 return;
             };
-            // periodically request IDR using value from session settings minimum_idr_interval_ms, 
 
-            if Instant::now().saturating_duration_since(last_instant_IDR_client).as_secs_f32() >= interval_IDR_seconds_f32 {
-                if let Some(sender) = &mut *CONTROL_SENDER.lock(){
-                    sender.send(&ClientControlPacket::RequestIdr).ok(); 
-                } 
-                last_instant_IDR_client = Instant::now(); 
+            // periodically request an IDR frame using the settings' client_idr_refresh_interval_ms
+            if Instant::now()
+                .saturating_duration_since(last_instant_IDR_client)
+                .as_secs_f32()
+                >= interval_IDR_seconds_f32
+            {
+                if let Some(sender) = &mut *CONTROL_SENDER.lock() {
+                    sender.send(&ClientControlPacket::RequestIdr).ok();
+                }
+                last_instant_IDR_client = Instant::now();
             }
 
             if let Some(stats) = &mut *STATISTICS_MANAGER.lock() {
@@ -406,7 +365,7 @@ fn connection_pipeline(
                     sender.send(&ClientControlPacket::RequestIdr).ok();
                 }
                 warn!(
-                    "Network dropped {} video packets",
+                    "Network skipped {} video packets",
                     data.get_frames_skipped()
                 );
             }
@@ -415,40 +374,38 @@ fn connection_pipeline(
                     stream_corrupted = true;
                     if let Some(sender) = &mut *CONTROL_SENDER.lock() {
                         sender.send(&ClientControlPacket::RequestIdr).ok();
-                        videoStats.frames_dropped += 1;
                     }
-
                     if let Some(stats) = &mut *STATISTICS_MANAGER.lock() {
                         stats.report_video_packet_dropped(data.get_frame_index());
                     }
                     warn!(
                         "Dropped video packet {}. Reason: Decoder saturation",
                         data.get_frame_index()
-                    )
+                    );
+                    frames_dropped += 1;
                 } else {
-                    // case where frame is decoded correctly
+                    // frame is decoded correctly
                     if let Some(stats) = &mut *STATISTICS_MANAGER.lock() {
-                        stats.report_video_statistics(header.timestamp, videoStats);
+                        stats.report_video_packet_data(
+                            header.timestamp,
+                            data.get_frame_index(),
+                            frames_dropped,
+                        );
                     }
-                    videoStats.frame_interarrival = 0.0;
-                    videoStats.rx_bytes = 0;
-                    videoStats.duplicated_shard_counter = 0;
-                    videoStats.rx_shard_counter = 0;
-                    videoStats.frames_skipped = 0;
-                    videoStats.frames_dropped = 0;
+                    frames_dropped = 0;
                 }
             } else {
                 if let Some(sender) = &mut *CONTROL_SENDER.lock() {
                     sender.send(&ClientControlPacket::RequestIdr).ok();
                 }
-                videoStats.frames_dropped += 1;
                 if let Some(stats) = &mut *STATISTICS_MANAGER.lock() {
                     stats.report_video_packet_dropped(data.get_frame_index());
                 }
                 warn!(
                     "Dropped video packet {}. Reason: Waiting for IDR frame",
                     data.get_frame_index()
-                )
+                );
+                frames_dropped += 1;
             }
         }
     });

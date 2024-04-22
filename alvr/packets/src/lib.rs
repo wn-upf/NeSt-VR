@@ -75,15 +75,29 @@ pub struct BatteryPacket {
 
 #[derive(Serialize, Deserialize, Clone, Debug)]
 pub struct NetworkStatisticsPacket {
-    pub frame_index: u32,
+    pub frame_index: i32,
     pub frame_span: f32,
-    pub frame_interarrival: f32,
-    pub interarrival_jitter: f32,
-    pub ow_delay: f32,
-    pub rx_bytes: u32,
+
     pub bytes_in_frame: u32,
     pub bytes_in_frame_app: u32,
+
+    pub frame_interarrival: f32,
+
+    pub interarrival_jitter: f32,
+    pub ow_delay: f32,
+
     pub frames_skipped: u32,
+
+    pub rx_bytes: u32,
+    
+    pub rx_shard_counter: u32,
+    pub duplicated_shard_counter: u32,
+
+    pub highest_rx_frame_index: i32,
+    pub highest_rx_shard_index: i32,
+
+    pub threshold_gcc: f32,
+    pub internal_state_gcc: StatesWebrtc,
 }
 
 
@@ -209,29 +223,17 @@ pub enum ClientListAction {
 #[derive(Serialize, Deserialize, Default, Clone)]
 pub struct ClientStatistics {
     pub target_timestamp: Duration, // identifies the frame
+    pub frame_index: i32,
+
     pub frame_interval: Duration,
+
     pub video_decode: Duration,
     pub video_decoder_queue: Duration,
     pub rendering: Duration,
     pub vsync_queue: Duration,
     pub total_pipeline_latency: Duration,
 
-    pub frame_index: i32,
-    pub frame_span: f32,
-    pub frame_interarrival: f32,
-    pub interarrival_jitter: f32,
-    pub ow_delay: f32,
-    pub rx_bytes: u32,
-    pub bytes_in_frame: u32,
-    pub bytes_in_frame_app: u32,
-    pub frames_skipped: u32,
     pub frames_dropped: u32,
-    pub rx_shard_counter: u32,
-    pub duplicated_shard_counter: u32,
-    pub highest_rx_frame_index: i32,
-    pub highest_rx_shard_index: i32,
-    pub threshold_gcc: f32,
-    pub internal_state_gcc: StatesWebrtc,
 }
 
 #[derive(Serialize, Deserialize, Clone, Debug)]

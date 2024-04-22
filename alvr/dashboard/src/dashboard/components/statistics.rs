@@ -1,5 +1,5 @@
 use crate::{dashboard::theme::graph_colors, dashboard::ServerRequest};
-use alvr_events::{GraphStatistics, StatisticsSummary};
+use alvr_events::{GraphNetworkStatistics, GraphStatistics, StatisticsSummary};
 use alvr_gui_common::theme;
 use eframe::{
     egui::{
@@ -13,14 +13,15 @@ use statrs::statistics::{self, OrderStatistics};
 use std::{collections::VecDeque, ops::RangeInclusive};
 
 const GRAPH_HISTORY_SIZE: usize = 1000;
-const UPPER_QUANTILE: f64 = 0.90;
-const MIDDLE_QUANTILE:f64 = 0.4;
+const UPPER_QUANTILE: f64 = 0.80;
+const MIDDLE_QUANTILE: f64 = 0.4;
 fn draw_lines(painter: &Painter, points: Vec<Pos2>, color: Color32) {
     painter.add(Shape::line(points, Stroke::new(1.0, color)));
 }
 
 pub struct StatisticsTab {
     history: VecDeque<GraphStatistics>,
+    history_network: VecDeque<GraphNetworkStatistics>,
     last_statistics_summary: Option<StatisticsSummary>,
 }
 
@@ -28,6 +29,9 @@ impl StatisticsTab {
     pub fn new() -> Self {
         Self {
             history: vec![GraphStatistics::default(); GRAPH_HISTORY_SIZE]
+                .into_iter()
+                .collect(),
+            history_network: vec![GraphNetworkStatistics::default(); GRAPH_HISTORY_SIZE]
                 .into_iter()
                 .collect(),
             last_statistics_summary: None,
@@ -43,6 +47,11 @@ impl StatisticsTab {
         self.history.push_back(statistics);
     }
 
+    pub fn update_graph_network_statistics(&mut self, statistics: GraphNetworkStatistics) {
+        self.history_network.pop_front();
+        self.history_network.push_back(statistics);
+    }
+
     pub fn ui(&mut self, ui: &mut Ui) -> Option<ServerRequest> {
         if let Some(stats) = &self.last_statistics_summary {
             ScrollArea::new([false, true]).show(ui, |ui| {
@@ -55,7 +64,6 @@ impl StatisticsTab {
                 self.draw_frameloss(ui, available_width);
                 self.draw_frame_span_interarrival(ui, available_width);
                 self.draw_statistics_overview(ui, stats);
-
             });
         } else {
             ui.heading("No statistics available");
@@ -120,6 +128,63 @@ impl StatisticsTab {
         }
     }
 
+    fn draw_network_graph(
+        &self,
+        ui: &mut Ui,
+        available_width: f32,
+        title: &str,
+        data_range: RangeInclusive<f32>,
+        graph_content: impl FnOnce(&Painter, RectTransform),
+        tooltip_content: impl FnOnce(&mut Ui, &GraphNetworkStatistics),
+    ) {
+        ui.add_space(10.0);
+        ui.label(RichText::new(title).size(20.0));
+
+        let canvas_response = Frame::canvas(ui.style()).show(ui, |ui| {
+            ui.ctx().request_repaint();
+            let size = available_width * vec2(1.0, 0.2);
+
+            let (_id, canvas_rect) = ui.allocate_space(size);
+
+            let max = *data_range.end();
+            let min = *data_range.start();
+            let data_rect = Rect::from_x_y_ranges(0.0..=GRAPH_HISTORY_SIZE as f32, max..=min);
+            let to_screen = RectTransform::from_to(data_rect, canvas_rect);
+
+            let painter = ui.painter().with_clip_rect(canvas_rect);
+
+            graph_content(&painter, to_screen);
+
+            ui.painter().text(
+                to_screen * pos2(0.0, min),
+                Align2::LEFT_BOTTOM,
+                format!("{:.0}", min),
+                FontId::monospace(20.0),
+                Color32::GRAY,
+            );
+            ui.painter().text(
+                to_screen * pos2(0.0, max),
+                Align2::LEFT_TOP,
+                format!("{:.0}", max),
+                FontId::monospace(20.0),
+                Color32::GRAY,
+            );
+
+            data_rect
+        });
+
+        if let Some(pos) = canvas_response.response.hover_pos() {
+            let graph_pos =
+                RectTransform::from_to(canvas_response.response.rect, canvas_response.inner) * pos;
+            let history_index = (graph_pos.x as usize).clamp(0, GRAPH_HISTORY_SIZE - 1);
+
+            popup::show_tooltip(ui.ctx(), Id::new("popup"), |ui| {
+                tooltip_content(ui, self.history_network.get(history_index).unwrap())
+            });
+        }
+    }
+    
+
     fn draw_latency_graph(&self, ui: &mut Ui, available_width: f32) {
         let mut data = statistics::Data::new(
             self.history
@@ -131,7 +196,7 @@ impl StatisticsTab {
         self.draw_graph(
             ui,
             available_width,
-            "Latency",
+            "Latency (ms)",
             0.0..=(data.quantile(UPPER_QUANTILE)) as f32 * 1000.0,
             |painter, to_screen_trans| {
                 for i in 0..GRAPH_HISTORY_SIZE {
@@ -163,7 +228,7 @@ impl StatisticsTab {
                 use graph_colors::*;
 
                 fn label(ui: &mut Ui, text: &str, value_s: f32, color: Color32) {
-                    ui.colored_label(color, &format!("{text}: {:.2}ms", value_s * 1000.0));
+                    ui.colored_label(color, &format!("{text}: {:.2} ms", value_s * 1000.0));
                 }
                 label(
                     ui,
@@ -196,7 +261,7 @@ impl StatisticsTab {
         let lower_quantile = data.quantile(1.0 - UPPER_QUANTILE);
 
         let max = upper_quantile + (upper_quantile - lower_quantile);
-        let min = 0.0; 
+        let min = 0.0;
 
         self.draw_graph(
             ui,
@@ -228,27 +293,26 @@ impl StatisticsTab {
             },
         );
     }
-    
+
     fn draw_jitter(&self, ui: &mut Ui, available_width: f32) {
         let mut data = statistics::Data::new(
-            self.history
+            self.history_network
                 .iter()
                 .map(|stats| stats.ow_delay_ms as f64)
                 .collect::<Vec<_>>(),
         );
-        self.draw_graph(
+        self.draw_network_graph(
             ui,
             available_width,
-            "Jitter Graph",
+            "Shards Jitter Graph",
             0.0..=(data.quantile(UPPER_QUANTILE) * 5.0) as f32,
             |painter, to_screen_trans| {
                 let mut interarrival_jitter = Vec::with_capacity(GRAPH_HISTORY_SIZE);
                 let mut ow_delay = Vec::with_capacity(GRAPH_HISTORY_SIZE);
                 let mut threshold_gcc = Vec::with_capacity(GRAPH_HISTORY_SIZE);
-                let mut frame_interarrival_last_std = Vec::with_capacity(GRAPH_HISTORY_SIZE);
 
                 for i in 0..GRAPH_HISTORY_SIZE {
-                    let pointer_graphstatistics = &self.history[i];
+                    let pointer_graphstatistics = &self.history_network[i];
                     // new stats
 
                     let value_jitt = pointer_graphstatistics.interarrival_jitter_ms;
@@ -259,15 +323,10 @@ impl StatisticsTab {
 
                     let value_thr = pointer_graphstatistics.threshold_gcc;
                     threshold_gcc.push(to_screen_trans * pos2(i as f32, value_thr));
-
-                    let val_std = pointer_graphstatistics.frame_jitter_ms;
-                    frame_interarrival_last_std.push(to_screen_trans * pos2(i as f32, val_std));
                 }
                 draw_lines(painter, ow_delay, Color32::BLUE);
                 draw_lines(painter, threshold_gcc, Color32::GOLD);
-                draw_lines(painter, frame_interarrival_last_std, Color32::LIGHT_YELLOW); 
                 draw_lines(painter, interarrival_jitter, Color32::RED);
-
             },
             |ui, stats| {
                 fn maybe_label(
@@ -277,55 +336,47 @@ impl StatisticsTab {
                     color: Color32,
                 ) {
                     if let Some(value) = maybe_value_bps {
-                        ui.colored_label(color, &format!("{text}: {:.7}", value));
+                        ui.colored_label(color, &format!("{text}: {:.7} ms", value));
                     }
                 }
-                let graphstats = stats;
                 maybe_label(
                     ui,
-                    "Shard Interarrival jitter",
-                    Some(graphstats.interarrival_jitter_ms),
+                    "Shard Interarrival Jitter",
+                    Some(stats.interarrival_jitter_ms),
                     Color32::RED,
                 );
                 maybe_label(
                     ui,
                     "Filtered OW Delay",
-                    Some(graphstats.ow_delay_ms),
+                    Some(stats.ow_delay_ms),
                     Color32::BLUE,
                 );
                 maybe_label(
                     ui,
                     "Threshold from GCC",
-                    Some(graphstats.threshold_gcc),
+                    Some(stats.threshold_gcc),
                     Color32::GOLD,
-                );
-                maybe_label(
-                    ui,
-                    "Frame interarrival std (frame jitter).",
-                    Some(graphstats.frame_jitter_ms),
-                    Color32::LIGHT_YELLOW,
                 );
             },
         )
     }
 
     fn draw_frameloss(&self, ui: &mut Ui, available_width: f32) {
-        
-        self.draw_graph(
+        self.draw_network_graph(
             ui,
             available_width,
-            "Frame loss, Shard loss and Shards Duplicated Graph",
+            "Frames Skipped, Shards Lost and Shards Duplicated Graph",
             0.0..=20.0 as f32,
             |painter, to_screen_trans| {
-                let mut frameloss = Vec::with_capacity(GRAPH_HISTORY_SIZE);
+                let mut frameskipped = Vec::with_capacity(GRAPH_HISTORY_SIZE);
                 let mut shardloss = Vec::with_capacity(GRAPH_HISTORY_SIZE);
                 let mut dup_shards = Vec::with_capacity(GRAPH_HISTORY_SIZE);
 
                 for i in 0..GRAPH_HISTORY_SIZE {
-                    let pointer_graphstatistics = &self.history[i];
-                    // new stats
-                    let val_fl = pointer_graphstatistics.frame_loss;
-                    frameloss.push(to_screen_trans * pos2(i as f32, val_fl as f32));
+                    let pointer_graphstatistics = &self.history_network[i];
+
+                    let val_fs = pointer_graphstatistics.frames_skipped;
+                    frameskipped.push(to_screen_trans * pos2(i as f32, val_fs as f32));
 
                     let val_sl = pointer_graphstatistics.shards_lost;
                     shardloss.push(to_screen_trans * pos2(i as f32, val_sl as f32));
@@ -334,7 +385,7 @@ impl StatisticsTab {
                     dup_shards.push(to_screen_trans * pos2(i as f32, val_dups as f32));
                 }
 
-                draw_lines(painter, frameloss, Color32::LIGHT_BLUE);
+                draw_lines(painter, frameskipped, Color32::LIGHT_BLUE);
                 draw_lines(painter, shardloss, Color32::LIGHT_RED);
                 draw_lines(painter, dup_shards, Color32::DARK_GREEN);
             },
@@ -352,13 +403,13 @@ impl StatisticsTab {
                 let graphstats = stats;
                 maybe_label(
                     ui,
-                    "Frame Loss",
-                    Some(graphstats.frame_loss as f32),
+                    "Frames Skipped",
+                    Some(graphstats.frames_skipped as f32),
                     Color32::LIGHT_BLUE,
                 );
                 maybe_label(
                     ui,
-                    "Shard Loss",
+                    "Shards Lost",
                     Some(graphstats.shards_lost as f32),
                     Color32::LIGHT_RED,
                 );
@@ -374,31 +425,38 @@ impl StatisticsTab {
 
     fn draw_frame_span_interarrival(&self, ui: &mut Ui, available_width: f32) {
         let mut data = statistics::Data::new(
-            self.history
+            self.history_network
                 .iter()
                 .map(|stats| stats.frame_interarrival_ms as f64)
                 .collect::<Vec<_>>(),
         );
-        self.draw_graph(
+        self.draw_network_graph(
             ui,
             available_width,
-            "Frame Span and Interarrival Graph",
+            "Frame Span and Frame Interarrival Graph",
             0.0..=(data.quantile(UPPER_QUANTILE) * 2.0) as f32,
             |painter, to_screen_trans| {
                 let mut frame_span = Vec::with_capacity(GRAPH_HISTORY_SIZE);
                 let mut frame_interarrival = Vec::with_capacity(GRAPH_HISTORY_SIZE);
+                let mut frame_jitter = Vec::with_capacity(GRAPH_HISTORY_SIZE);
+
 
                 for i in 0..GRAPH_HISTORY_SIZE {
-                    let pointer_graphstatistics = &self.history[i];
+                    let pointer_graphstatistics = &self.history_network[i];
                     // new stats
                     let fs = pointer_graphstatistics.frame_span_ms;
                     frame_span.push(to_screen_trans * pos2(i as f32, fs as f32));
 
                     let fi = pointer_graphstatistics.frame_interarrival_ms;
                     frame_interarrival.push(to_screen_trans * pos2(i as f32, fi as f32));
+
+                    let val_std = pointer_graphstatistics.frame_jitter_ms;
+                    frame_jitter.push(to_screen_trans * pos2(i as f32, val_std));
                 }
                 draw_lines(painter, frame_interarrival, Color32::LIGHT_RED);
                 draw_lines(painter, frame_span, Color32::LIGHT_BLUE);
+                draw_lines(painter, frame_jitter, Color32::LIGHT_YELLOW);
+
             },
             |ui, stats| {
                 fn maybe_label(
@@ -408,11 +466,17 @@ impl StatisticsTab {
                     color: Color32,
                 ) {
                     if let Some(value) = maybe_value_bps {
-                        ui.colored_label(color, &format!("{text}: {:.6} ", value));
+                        ui.colored_label(color, &format!("{text}: {:.6} ms", value));
                     }
                 }
                 let graphstats = stats;
 
+                maybe_label(
+                    ui,
+                    "Frame span",
+                    Some(graphstats.frame_span_ms as f32),
+                    Color32::LIGHT_BLUE,
+                );
                 maybe_label(
                     ui,
                     "Frame Interarrival",
@@ -421,9 +485,9 @@ impl StatisticsTab {
                 );
                 maybe_label(
                     ui,
-                    "Frame span",
-                    Some(graphstats.frame_span_ms as f32),
-                    Color32::LIGHT_BLUE,
+                    "Frame interarrival std (frame jitter).",
+                    Some(stats.frame_jitter_ms),
+                    Color32::LIGHT_YELLOW,
                 );
             },
         )
@@ -431,37 +495,29 @@ impl StatisticsTab {
 
     fn draw_3throughput_graphs(&self, ui: &mut Ui, available_width: f32) {
         let mut data = statistics::Data::new(
-            self.history
+            self.history_network
                 .iter()
-                .map(|stats| stats.ema_peak_throughput_bps as f64)
+                .map(|stats| stats.network_throughput_bps as f64)
                 .collect::<Vec<_>>(),
         );
-        self.draw_graph(
+        self.draw_network_graph(
             ui,
             available_width,
-            "Throughput Peak, Application and Network",
-            0.0..=(data.quantile(MIDDLE_QUANTILE) ) as f32 / 1e6,
+            "Network and Application Throughput",
+            0.0..=(data.quantile(UPPER_QUANTILE) * 2.) as f32 / 1e6,
             |painter, to_screen_trans| {
                 let mut network_throughput_bps: Vec<Pos2> = Vec::with_capacity(GRAPH_HISTORY_SIZE);
-                let mut peak_network_throughput_bps: Vec<Pos2> =
-                    Vec::with_capacity(GRAPH_HISTORY_SIZE);
                 let mut application_throughput_bps: Vec<Pos2> =
                     Vec::with_capacity(GRAPH_HISTORY_SIZE);
 
                 let mut requested = Vec::with_capacity(GRAPH_HISTORY_SIZE);
 
                 for i in 0..GRAPH_HISTORY_SIZE {
-
-                    let pointer_graphstatistics = &self.history[i];
-                    let nom_br = &self.history[i].nominal_bitrate;
-                    // new stats
+                    let pointer_graphstatistics = &self.history_network[i];
+                    let nom_br = &self.history_network[i].nominal_bitrate;
 
                     let value_nw = pointer_graphstatistics.network_throughput_bps;
                     network_throughput_bps.push(to_screen_trans * pos2(i as f32, value_nw / 1e6));
-
-                    let value_pk = pointer_graphstatistics.ema_peak_throughput_bps;
-                    peak_network_throughput_bps
-                        .push(to_screen_trans * pos2(i as f32, value_pk / 1e6));
 
                     let value_app = pointer_graphstatistics.application_throughput_bps;
                     application_throughput_bps
@@ -469,10 +525,8 @@ impl StatisticsTab {
                     requested.push(to_screen_trans * pos2(i as f32, nom_br.requested_bps / 1e6));
                 }
                 draw_lines(painter, network_throughput_bps, Color32::BLUE);
-                draw_lines(painter, peak_network_throughput_bps, Color32::LIGHT_RED);
                 draw_lines(painter, application_throughput_bps, Color32::YELLOW);
                 draw_lines(painter, requested, theme::OK_GREEN);
-
             },
             |ui, stats| {
                 fn maybe_label(
@@ -486,20 +540,13 @@ impl StatisticsTab {
                     }
                 }
                 let graphstats = stats;
-                let n = &stats.nominal_bitrate; 
+                let n = &stats.nominal_bitrate;
 
-               
                 maybe_label(
                     ui,
                     "Network Throughput",
                     Some(graphstats.network_throughput_bps),
                     Color32::BLUE,
-                );
-                maybe_label(
-                    ui,
-                    "Peak Throughput",
-                    Some(graphstats.ema_peak_throughput_bps),
-                    Color32::LIGHT_RED,
                 );
                 maybe_label(
                     ui,
@@ -512,8 +559,6 @@ impl StatisticsTab {
         )
     }
 
-
-
     fn draw_bitrate_graph(&self, ui: &mut Ui, available_width: f32) {
         let mut data = statistics::Data::new(
             self.history
@@ -524,7 +569,7 @@ impl StatisticsTab {
         self.draw_graph(
             ui,
             available_width,
-            "Bitrate",
+            "Bitrate (ALVR's computation)",
             0.0..=(data.quantile(UPPER_QUANTILE) * 2.0) as f32 / 1e6,
             |painter, to_screen_trans| {
                 let mut scaled_calculated = Vec::with_capacity(GRAPH_HISTORY_SIZE);
@@ -535,12 +580,9 @@ impl StatisticsTab {
                 let mut manual_min = Vec::with_capacity(GRAPH_HISTORY_SIZE);
                 let mut requested = Vec::with_capacity(GRAPH_HISTORY_SIZE);
                 let mut actual = Vec::with_capacity(GRAPH_HISTORY_SIZE);
-                
 
                 for i in 0..GRAPH_HISTORY_SIZE {
                     let nom_br = &self.history[i].nominal_bitrate;
-
-                    
 
                     if let Some(value) = nom_br.scaled_calculated_bps {
                         scaled_calculated.push(to_screen_trans * pos2(i as f32, value / 1e6))
@@ -575,7 +617,6 @@ impl StatisticsTab {
                 draw_lines(painter, manual_min, graph_colors::RENDER);
                 draw_lines(painter, requested, theme::OK_GREEN);
                 draw_lines(painter, actual, theme::FG);
-
             },
             |ui, stats| {
                 fn maybe_label(
@@ -624,7 +665,6 @@ impl StatisticsTab {
                     Some(stats.actual_bitrate_bps),
                     theme::FG,
                 );
-
             },
         )
     }
@@ -690,10 +730,10 @@ impl StatisticsTab {
             ui[0].label("Frame jitter:");
             ui[1].label(&format!("{:.0} ms", statistics.frame_jitter_ms));
 
-            ui[0].label("Total packets lost:");
+            ui[0].label("Total packets dropped:");
             ui[1].label(&format!(
                 "{} packets ({} packets/s)",
-                statistics.packets_lost_total, statistics.packets_lost_per_sec
+                statistics.packets_dropped_total, statistics.packets_dropped_per_sec
             ));
 
             ui[0].label("Total packets skipped:");

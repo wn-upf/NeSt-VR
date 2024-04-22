@@ -902,12 +902,7 @@ fn connection_pipeline(
                     let decoder_latency = client_stats.video_decode;
                     let (network_latency, frame_interarrival_avg) = stats.report_statistics(client_stats);
 
-
-                    let server_data_lock = SERVER_DATA_MANAGER.read();
-                    
-                    
-                    // let shard_loss = ? ; /// need to compute here or borrow from stats.report_statistics
-                    
+                    let server_data_lock = SERVER_DATA_MANAGER.read();  
                     BITRATE_MANAGER.lock().report_frame_latencies(
                         &server_data_lock.settings().video.bitrate.mode,
                         timestamp,
@@ -1009,10 +1004,10 @@ fn connection_pipeline(
                         unsafe { crate::RequestIDR() }
                     }
 
-                    ClientControlPacket::NetworkStatistics(networkstats) =>
+                    ClientControlPacket::NetworkStatistics(network_stats) =>
                     {
                         if let Some(stats) = &mut *STATISTICS_MANAGER.lock() {
-                            stats.report_network_stats_server(networkstats); 
+                            stats.report_network_statistics(network_stats); 
                         }
                     }
 

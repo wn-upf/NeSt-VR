@@ -5,7 +5,6 @@ use std::{
     time::{Duration, Instant},
 };
 
-use crate::connection::VideoStatsRx;
 #[derive(Clone)]
 struct HistoryFrame {
     input_acquired: Instant,
@@ -89,35 +88,18 @@ impl StatisticsManager {
         }
     }
 
-    pub fn report_video_statistics(
+    pub fn report_video_packet_data(
         &mut self,
         target_timestamp: Duration,
-        video_stats: VideoStatsRx,
+        frame_index: u32,
+        frames_dropped: u32,
     ) {
         if let Some(frame) = self.stats_history_buffer.iter_mut().find(|frame| {
             frame.client_stats.target_timestamp == target_timestamp
                 && frame.client_stats.frame_index == -1
         }) {
-            frame.client_stats.frame_index = video_stats.frame_index as i32;
-
-            frame.client_stats.frame_span = video_stats.frame_span;
-            frame.client_stats.frame_interarrival = video_stats.frame_interarrival;
-
-            frame.client_stats.interarrival_jitter = video_stats.interarrival_jitter;
-            frame.client_stats.ow_delay = video_stats.ow_delay;
-
-            frame.client_stats.rx_bytes = video_stats.rx_bytes;
-            frame.client_stats.bytes_in_frame = video_stats.bytes_in_frame;
-            frame.client_stats.bytes_in_frame_app = video_stats.bytes_in_frame_app;
-
-            frame.client_stats.frames_skipped = video_stats.frames_skipped;
-            frame.client_stats.frames_dropped = video_stats.frames_dropped;
-
-            frame.client_stats.rx_shard_counter = video_stats.rx_shard_counter;
-            frame.client_stats.duplicated_shard_counter = video_stats.duplicated_shard_counter;
-
-            frame.client_stats.highest_rx_frame_index = video_stats.highest_rx_frame_index;
-            frame.client_stats.highest_rx_shard_index = video_stats.highest_rx_shard_index;
+            frame.client_stats.frame_index = frame_index as i32;
+            frame.client_stats.frames_dropped = frames_dropped;
         }
     }
 
@@ -187,19 +169,13 @@ impl StatisticsManager {
             if let Some(frame) = self.stats_history_buffer.remove(index) {
                 let mut frame_client_stats_clone = frame.client_stats.clone();
 
-                // accumulate the metrics when frames are dropped after decoding
+                // a previously decoded frame can have been dropped after decoding
                 self.stats_history_buffer.retain(|frame_dropped| {
                     if frame_dropped.client_stats.target_timestamp < target_timestamp {
-                        warn!("Dropped video packet {}. Reason: Maximum decoded frames buffering achieved", frame_dropped.client_stats.frame_index);
-                        frame_client_stats_clone.frame_interarrival +=
-                            frame_dropped.client_stats.frame_interarrival;
-                        frame_client_stats_clone.rx_bytes += frame_dropped.client_stats.rx_bytes;
-                        frame_client_stats_clone.duplicated_shard_counter +=
-                            frame_dropped.client_stats.duplicated_shard_counter;
-                        frame_client_stats_clone.rx_shard_counter +=
-                            frame_dropped.client_stats.rx_shard_counter;
-                        frame_client_stats_clone.frames_skipped +=
-                            frame_dropped.client_stats.frames_skipped;
+                        warn!(
+                            "Dropped video packet {}. Reason: ??",
+                            frame_dropped.client_stats.frame_index
+                        ); // TODO: find the reason
                         frame_client_stats_clone.frames_dropped +=
                             frame_dropped.client_stats.frames_dropped + 1;
                         false
@@ -207,7 +183,6 @@ impl StatisticsManager {
                         true
                     }
                 });
-
                 Some(frame_client_stats_clone)
             } else {
                 None

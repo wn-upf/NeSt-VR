@@ -3,13 +3,16 @@ use alvr_packets::{AudioDevicesList, ButtonValue};
 use alvr_session::SessionConfig;
 use serde::{Deserialize, Serialize};
 use std::{path::PathBuf, time::Duration};
-use alvr_packets::NetworkStatisticsPacket; 
 #[derive(Serialize, Deserialize, Clone, Debug, Default)]
 pub struct StatisticsSummary {
+    pub frame_jitter_ms: f32,
+
     pub video_packets_total: usize,
     pub video_packets_per_sec: usize,
+
     pub video_mbytes_total: usize,
     pub video_mbits_per_sec: f32,
+
     pub total_pipeline_latency_average_ms: f32,
     pub game_delay_average_ms: f32,
     pub server_compositor_delay_average_ms: f32,
@@ -19,13 +22,16 @@ pub struct StatisticsSummary {
     pub decoder_queue_delay_average_ms: f32,
     pub client_compositor_average_ms: f32,
     pub vsync_queue_delay_average_ms: f32,
-    pub frame_jitter_ms: f32,
-    pub packets_lost_total: usize,
-    pub packets_lost_per_sec: usize,
+
+    pub packets_dropped_total: usize,
+    pub packets_dropped_per_sec: usize,
+
     pub packets_skipped_total: usize,
     pub packets_skipped_per_sec: usize,
-    pub client_fps: u32,
-    pub server_fps: u32,
+
+    pub client_fps: f32,
+    pub server_fps: f32,
+
     pub battery_hmd: u32,
     pub hmd_plugged: bool,
 }
@@ -43,7 +49,9 @@ pub struct NominalBitrateStats {
 }
 #[derive(Serialize, Deserialize, Clone, Debug, Default)]
 pub struct GraphStatistics {
-    pub frame_index: u32,
+    pub frame_index: i32,
+    pub frames_dropped: u32,
+
     pub total_pipeline_latency_s: f32,
     pub game_time_s: f32,
     pub server_compositor_s: f32,
@@ -53,30 +61,37 @@ pub struct GraphStatistics {
     pub decoder_queue_s: f32,
     pub client_compositor_s: f32,
     pub vsync_queue_s: f32,
+
     pub client_fps: f32,
     pub server_fps: f32,
+
     pub nominal_bitrate: NominalBitrateStats,
     pub actual_bitrate_bps: f32,
+}
+
+#[derive(Serialize, Deserialize, Clone, Debug, Default)]
+pub struct GraphNetworkStatistics {
+    pub frame_index: u32,
     pub is_idr: bool,
 
     pub frame_span_ms: f32,
-    pub frame_interarrival_ms: f32,
-
     pub interarrival_jitter_ms: f32,
-    pub frame_jitter_ms: f32, 
     pub ow_delay_ms: f32,
 
-    pub network_throughput_bps: f32,
-    pub peak_network_throughput_bps: f32,
-    pub ema_peak_throughput_bps: f32, 
-    pub application_throughput_bps: f32,
+    pub frame_interarrival_ms: f32,
+    pub frame_jitter_ms: f32,
 
-    pub frames_dropped: u32,
     pub frames_skipped: u32,
-    pub frame_loss: u32,
 
     pub shards_lost: isize,
     pub shards_duplicated: u32,
+
+    pub network_throughput_bps: f32,
+    pub peak_network_throughput_bps: f32,
+    pub ema_peak_throughput_bps: f32,
+    pub application_throughput_bps: f32,
+
+    pub nominal_bitrate: NominalBitrateStats,
 
     pub threshold_gcc: f32,
     pub internal_state_gcc: StatesWebrtc,
@@ -114,7 +129,7 @@ pub enum EventType {
     Session(Box<SessionConfig>),
     StatisticsSummary(StatisticsSummary),
     GraphStatistics(GraphStatistics),
-    NetworkStatistics(NetworkStatisticsPacket), 
+    GraphNetworkStatistics(GraphNetworkStatistics),
     Tracking(Box<TrackingEvent>),
     Buttons(Vec<ButtonEvent>),
     Haptics(HapticsEvent),

@@ -159,6 +159,9 @@ impl eframe::App for Dashboard {
                 EventType::GraphStatistics(graph_statistics) => self
                     .statistics_tab
                     .update_graph_statistics(graph_statistics),
+                EventType::GraphNetworkStatistics(graph_statistics) => self
+                    .statistics_tab
+                    .update_graph_network_statistics(graph_statistics),
                 EventType::StatisticsSummary(statistics) => {
                     self.statistics_tab.update_statistics(statistics)
                 }
