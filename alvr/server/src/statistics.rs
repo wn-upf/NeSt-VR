@@ -1,6 +1,6 @@
 use alvr_common::{SlidingWindowAverage, HEAD_ID};
 use alvr_events::{EventType, GraphStatistics, NominalBitrateStats, StatisticsSummary};
-use alvr_packets::ClientStatistics;
+use alvr_packets::{ClientStatistics, NetworkStatisticsPacket};
 use std::{
     collections::{HashMap, VecDeque},
     time::{Duration, Instant},
@@ -290,6 +290,19 @@ impl StatisticsManager {
         self.last_nominal_bitrate_stats = stats;
     }
 
+    pub fn report_network_stats_server(&mut self, stats: NetworkStatisticsPacket) {
+        alvr_events::send_event(EventType::NetworkStatistics( NetworkStatisticsPacket{
+            frame_index: stats.frame_index, 
+            frame_span: stats.frame_span,
+            frame_interarrival: stats.frame_interarrival,
+            interarrival_jitter: stats.interarrival_jitter, 
+            ow_delay: stats.ow_delay, 
+            rx_bytes: stats.rx_bytes, 
+            bytes_in_frame: stats.bytes_in_frame, 
+            bytes_in_frame_app: stats.bytes_in_frame_app, 
+            frames_skipped: stats.frames_skipped, 
+        }));
+    }
     // Called every frame. Some statistics are reported once every frame
     // Returns network latency, frame interarrival average
     pub fn report_statistics(&mut self, client_stats: ClientStatistics) -> (Duration, f32) {

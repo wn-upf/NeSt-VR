@@ -3,7 +3,7 @@ use alvr_packets::{AudioDevicesList, ButtonValue};
 use alvr_session::SessionConfig;
 use serde::{Deserialize, Serialize};
 use std::{path::PathBuf, time::Duration};
-
+use alvr_packets::NetworkStatisticsPacket; 
 #[derive(Serialize, Deserialize, Clone, Debug, Default)]
 pub struct StatisticsSummary {
     pub video_packets_total: usize,
@@ -43,6 +43,7 @@ pub struct NominalBitrateStats {
 }
 #[derive(Serialize, Deserialize, Clone, Debug, Default)]
 pub struct GraphStatistics {
+    pub frame_index: u32,
     pub total_pipeline_latency_s: f32,
     pub game_time_s: f32,
     pub server_compositor_s: f32,
@@ -56,8 +57,6 @@ pub struct GraphStatistics {
     pub server_fps: f32,
     pub nominal_bitrate: NominalBitrateStats,
     pub actual_bitrate_bps: f32,
-
-    pub frame_index: u32,
     pub is_idr: bool,
 
     pub frame_span_ms: f32,
@@ -115,6 +114,7 @@ pub enum EventType {
     Session(Box<SessionConfig>),
     StatisticsSummary(StatisticsSummary),
     GraphStatistics(GraphStatistics),
+    NetworkStatistics(NetworkStatisticsPacket), 
     Tracking(Box<TrackingEvent>),
     Buttons(Vec<ButtonEvent>),
     Haptics(HapticsEvent),

@@ -73,6 +73,20 @@ pub struct BatteryPacket {
     pub is_plugged: bool,
 }
 
+#[derive(Serialize, Deserialize, Clone, Debug)]
+pub struct NetworkStatisticsPacket {
+    pub frame_index: u32,
+    pub frame_span: f32,
+    pub frame_interarrival: f32,
+    pub interarrival_jitter: f32,
+    pub ow_delay: f32,
+    pub rx_bytes: u32,
+    pub bytes_in_frame: u32,
+    pub bytes_in_frame_app: u32,
+    pub frames_skipped: u32,
+}
+
+
 #[derive(Serialize, Deserialize, Clone, Copy, Debug)]
 pub enum ButtonValue {
     Binary(bool),
@@ -99,6 +113,8 @@ pub enum ClientControlPacket {
     Log { level: LogSeverity, message: String },
     Reserved(String),
     ReservedBuffer(Vec<u8>),
+
+    NetworkStatistics(NetworkStatisticsPacket)
 }
 
 #[derive(Serialize, Deserialize, Default)]

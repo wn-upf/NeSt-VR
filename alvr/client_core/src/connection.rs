@@ -22,7 +22,7 @@ use alvr_common::{
 use alvr_packets::{
     ClientConnectionResult, ClientControlPacket, ClientStatistics, Haptics, ServerControlPacket,
     StreamConfigPacket, Tracking, VideoPacketHeader, VideoStreamingCapabilities, AUDIO, HAPTICS,
-    STATISTICS, TRACKING, VIDEO,
+    STATISTICS, TRACKING, VIDEO, NetworkStatisticsPacket
 };
 use alvr_session::{settings_schema::Switch, SessionConfig};
 use alvr_sockets::{
@@ -348,9 +348,6 @@ fn connection_pipeline(
                 Err(ConnectionError::TryAgain(_)) => continue,
                 Err(ConnectionError::Other(_)) => return,
             };
-            let Ok((header, nal)) = data.get() else {
-                return;
-            };
 
             videoStats.frame_index = data.get_frame_index();
             videoStats.frame_span = data.get_frame_span();
@@ -369,7 +366,25 @@ fn connection_pipeline(
 
             videoStats.internal_state_gcc = data.get_gcc_state();
             videoStats.threshold_gcc = data.get_adaptive_threshold();
+            
+            // //send new network statistics packets every frame independently, even if the application drops them for any reason          
+            if let Some(sender) = &mut *CONTROL_SENDER.lock() {  
+                sender.send(&ClientControlPacket::NetworkStatistics(NetworkStatisticsPacket{
+                    frame_index: videoStats.frame_index,
+                    frame_span: videoStats.frame_span,
+                    frame_interarrival: videoStats.frame_interarrival, 
+                    interarrival_jitter: videoStats.interarrival_jitter, 
+                    ow_delay: videoStats.ow_delay, 
+                    rx_bytes: videoStats.rx_bytes, 
+                    bytes_in_frame: videoStats.bytes_in_frame, 
+                    bytes_in_frame_app: videoStats.bytes_in_frame_app,
+                    frames_skipped: videoStats.frames_skipped, 
+                })).ok(); 
+            }
 
+            let Ok((header, nal)) = data.get() else {
+                return;
+            };
             // periodically request IDR using value from session settings minimum_idr_interval_ms, 
 
             if Instant::now().saturating_duration_since(last_instant_IDR_client).as_secs_f32() >= interval_IDR_seconds_f32 {

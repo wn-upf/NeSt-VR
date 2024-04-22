@@ -1008,6 +1008,14 @@ fn connection_pipeline(
                         }
                         unsafe { crate::RequestIDR() }
                     }
+
+                    ClientControlPacket::NetworkStatistics(networkstats) =>
+                    {
+                        if let Some(stats) = &mut *STATISTICS_MANAGER.lock() {
+                            stats.report_network_stats_server(networkstats); 
+                        }
+                    }
+
                     ClientControlPacket::VideoErrorReport => {
                         unsafe { crate::VideoErrorReportReceive() };
                     }
