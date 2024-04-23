@@ -14,7 +14,7 @@ use std::{collections::VecDeque, ops::RangeInclusive};
 
 const GRAPH_HISTORY_SIZE: usize = 1000;
 const UPPER_QUANTILE: f64 = 0.80;
-const MIDDLE_QUANTILE: f64 = 0.4;
+// const MIDDLE_QUANTILE: f64 = 0.4;
 fn draw_lines(painter: &Painter, points: Vec<Pos2>, color: Color32) {
     painter.add(Shape::line(points, Stroke::new(1.0, color)));
 }

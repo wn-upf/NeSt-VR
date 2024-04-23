@@ -900,16 +900,17 @@ fn connection_pipeline(
                 if let Some(stats) = &mut *STATISTICS_MANAGER.lock() {
                     let timestamp = client_stats.target_timestamp;
                     let decoder_latency = client_stats.video_decode;
-                    let (network_latency, frame_interarrival_avg) = stats.report_statistics(client_stats);
+                    let (network_latency, frame_interarrival_avg) =
+                        stats.report_statistics(client_stats);
 
-                    let server_data_lock = SERVER_DATA_MANAGER.read();  
+                    let server_data_lock = SERVER_DATA_MANAGER.read();
                     BITRATE_MANAGER.lock().report_frame_latencies(
                         &server_data_lock.settings().video.bitrate.mode,
                         timestamp,
                         network_latency,
                         decoder_latency,
                         frame_interarrival_avg,
-                        );
+                    );
                 }
             }
         }
@@ -1004,10 +1005,9 @@ fn connection_pipeline(
                         unsafe { crate::RequestIDR() }
                     }
 
-                    ClientControlPacket::NetworkStatistics(network_stats) =>
-                    {
+                    ClientControlPacket::NetworkStatistics(network_stats) => {
                         if let Some(stats) = &mut *STATISTICS_MANAGER.lock() {
-                            stats.report_network_statistics(network_stats); 
+                            stats.report_network_statistics(network_stats);
                         }
                     }
 

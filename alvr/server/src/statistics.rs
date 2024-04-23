@@ -293,134 +293,127 @@ impl StatisticsManager {
     pub fn report_nominal_bitrate_stats(&mut self, stats: NominalBitrateStats) {
         self.last_nominal_bitrate_stats = stats;
     }
+
     // This statistics are reported for every succesfully received frame
     pub fn report_network_statistics(&mut self, network_stats: NetworkStatisticsPacket) {
-        if let Some(frame) = self
-            .stats_history_buffer
-            .iter_mut()
-            .find(|frame| frame.frame_index == network_stats.frame_index)
-        {
-            self.packets_skipped_total += network_stats.frames_skipped as usize;
-            self.packets_skipped_partial_sum += network_stats.frames_skipped as usize;
+        self.packets_skipped_total += network_stats.frames_skipped as usize;
+        self.packets_skipped_partial_sum += network_stats.frames_skipped as usize;
 
-            if !self.is_first_stats {
-                self.frame_interarrival_average
-                    .submit_sample(network_stats.frame_interarrival);
-            } else {
-                self.is_first_stats = false
-            }
-
-            let network_throughput_bps: f32 = if network_stats.frame_interarrival != 0.0 {
-                network_stats.rx_bytes as f32 * 8.0 / network_stats.frame_interarrival
-            } else {
-                0.0
-            };
-
-            let peak_network_throughput_bps: f32 = if network_stats.frame_span != 0.0 {
-                network_stats.bytes_in_frame as f32 * 8.0 / network_stats.frame_span
-            } else {
-                0.0
-            };
-
-            let now = Instant::now();
-
-            if self.ema_peak_throughput_bps == 0. {
-                self.ema_peak_throughput_bps = peak_network_throughput_bps;
-            } else {
-                let delta_peak_t = now.duration_since(self.last_peak_t_measure);
-                let time_const = Duration::from_secs(5).as_secs_f32();
-
-                self.ema_peak_throughput_bps = delta_peak_t.as_secs_f32() / time_const
-                    * peak_network_throughput_bps
-                    + (1.0 - delta_peak_t.as_secs_f32() / time_const)
-                        * self.ema_peak_throughput_bps;
-            }
-            self.last_peak_t_measure = now;
-
-            let application_throughput_bps = if network_stats.frame_interarrival != 0.0 {
-                network_stats.bytes_in_frame_app as f32 * 8.0 / network_stats.frame_interarrival
-            } else {
-                0.0
-            };
-
-            let mut shards_sent: usize = 0;
-            let shards_lost: isize;
-
-            if self.prev_highest_frame == network_stats.highest_rx_frame_index as i32 {
-                if self.prev_highest_shard < network_stats.highest_rx_shard_index as i32 {
-                    shards_sent =
-                        (network_stats.highest_rx_shard_index - self.prev_highest_shard) as usize;
-
-                    self.prev_highest_shard = network_stats.highest_rx_shard_index as i32;
-                }
-            } else if self.prev_highest_frame < network_stats.highest_rx_frame_index as i32 {
-                let shards_from_prev =
-                    match self.map_frames_spf.get(&(self.prev_highest_frame as u32)) {
-                        Some(&shards_count_prev) => {
-                            shards_count_prev.saturating_sub((self.prev_highest_shard + 1) as usize)
-                        }
-                        None => 0,
-                    };
-
-                let shards_from_inbetween: usize = self
-                    .map_frames_spf
-                    .iter()
-                    .filter(|&(frame, _)| {
-                        *frame > self.prev_highest_frame as u32
-                            && *frame < network_stats.highest_rx_frame_index as u32
-                    })
-                    .map(|(_, val)| *val)
-                    .sum();
-
-                let shards_from_actual = network_stats.highest_rx_shard_index as usize + 1;
-
-                shards_sent = shards_from_prev + shards_from_inbetween + shards_from_actual;
-
-                self.prev_highest_frame = network_stats.highest_rx_frame_index as i32;
-                self.prev_highest_shard = network_stats.highest_rx_shard_index as i32;
-
-                let keys_to_drop: Vec<_> = self
-                    .map_frames_spf
-                    .iter()
-                    .filter(|&(frame, _)| *frame < self.prev_highest_frame as u32)
-                    .map(|(key, _)| *key)
-                    .collect();
-
-                for key in keys_to_drop {
-                    self.map_frames_spf.remove_entry(&key);
-                }
-            }
-
-            shards_lost = shards_sent as isize - network_stats.rx_shard_counter as isize;
-
-            alvr_events::send_event(EventType::GraphNetworkStatistics(GraphNetworkStatistics {
-                frame_index: network_stats.frame_index as u32,
-                is_idr: frame.is_idr,
-
-                frame_span_ms: network_stats.frame_span * 1000.0,
-
-                interarrival_jitter_ms: network_stats.interarrival_jitter * 1000.0,
-                ow_delay_ms: network_stats.ow_delay * 1000.0,
-
-                frame_interarrival_ms: network_stats.frame_interarrival * 1000.0,
-                frame_jitter_ms: self.frame_interarrival_average.get_std() * 1000.0,
-
-                frames_skipped: network_stats.frames_skipped,
-
-                shards_lost: shards_lost,
-                shards_duplicated: network_stats.duplicated_shard_counter,
-
-                network_throughput_bps: network_throughput_bps,
-                peak_network_throughput_bps: peak_network_throughput_bps,
-                ema_peak_throughput_bps: self.ema_peak_throughput_bps,
-                application_throughput_bps: application_throughput_bps,
-
-                nominal_bitrate: self.last_nominal_bitrate_stats.clone(),
-
-                threshold_gcc: network_stats.threshold_gcc,
-                internal_state_gcc: network_stats.internal_state_gcc,
-            }));
+        if !self.is_first_stats {
+            self.frame_interarrival_average
+                .submit_sample(network_stats.frame_interarrival);
+        } else {
+            self.is_first_stats = false
         }
+
+        let network_throughput_bps: f32 = if network_stats.frame_interarrival != 0.0 {
+            network_stats.rx_bytes as f32 * 8.0 / network_stats.frame_interarrival
+        } else {
+            0.0
+        };
+
+        let peak_network_throughput_bps: f32 = if network_stats.frame_span != 0.0 {
+            network_stats.bytes_in_frame as f32 * 8.0 / network_stats.frame_span
+        } else {
+            0.0
+        };
+
+        let now = Instant::now();
+
+        if self.ema_peak_throughput_bps == 0. {
+            self.ema_peak_throughput_bps = peak_network_throughput_bps;
+        } else {
+            let delta_peak_t = now.duration_since(self.last_peak_t_measure);
+            let time_const = Duration::from_secs(5).as_secs_f32();
+
+            self.ema_peak_throughput_bps = delta_peak_t.as_secs_f32() / time_const
+                * peak_network_throughput_bps
+                + (1.0 - delta_peak_t.as_secs_f32() / time_const) * self.ema_peak_throughput_bps;
+        }
+        self.last_peak_t_measure = now;
+
+        let application_throughput_bps = if network_stats.frame_interarrival != 0.0 {
+            network_stats.bytes_in_frame_app as f32 * 8.0 / network_stats.frame_interarrival
+        } else {
+            0.0
+        };
+
+        let mut shards_sent: usize = 0;
+        let shards_lost: isize;
+
+        if self.prev_highest_frame == network_stats.highest_rx_frame_index as i32 {
+            if self.prev_highest_shard < network_stats.highest_rx_shard_index as i32 {
+                shards_sent =
+                    (network_stats.highest_rx_shard_index - self.prev_highest_shard) as usize;
+
+                self.prev_highest_shard = network_stats.highest_rx_shard_index as i32;
+            }
+        } else if self.prev_highest_frame < network_stats.highest_rx_frame_index as i32 {
+            let shards_from_prev = match self.map_frames_spf.get(&(self.prev_highest_frame as u32))
+            {
+                Some(&shards_count_prev) => {
+                    shards_count_prev.saturating_sub((self.prev_highest_shard + 1) as usize)
+                }
+                None => 0,
+            };
+
+            let shards_from_inbetween: usize = self
+                .map_frames_spf
+                .iter()
+                .filter(|&(frame, _)| {
+                    *frame > self.prev_highest_frame as u32
+                        && *frame < network_stats.highest_rx_frame_index as u32
+                })
+                .map(|(_, val)| *val)
+                .sum();
+
+            let shards_from_actual = network_stats.highest_rx_shard_index as usize + 1;
+
+            shards_sent = shards_from_prev + shards_from_inbetween + shards_from_actual;
+        }
+
+        shards_lost = shards_sent as isize - network_stats.rx_shard_counter as isize;
+
+        self.prev_highest_frame = network_stats.highest_rx_frame_index as i32;
+        self.prev_highest_shard = network_stats.highest_rx_shard_index as i32;
+
+        let keys_to_drop: Vec<_> = self
+            .map_frames_spf
+            .iter()
+            .filter(|&(frame, _)| *frame < self.prev_highest_frame as u32)
+            .map(|(key, _)| *key)
+            .collect();
+
+        for key in keys_to_drop {
+            self.map_frames_spf.remove_entry(&key);
+        }
+
+        alvr_events::send_event(EventType::GraphNetworkStatistics(GraphNetworkStatistics {
+            frame_index: network_stats.frame_index as u32,
+
+            frame_span_ms: network_stats.frame_span * 1000.0,
+
+            interarrival_jitter_ms: network_stats.interarrival_jitter * 1000.0,
+            ow_delay_ms: network_stats.ow_delay * 1000.0,
+
+            frame_interarrival_ms: network_stats.frame_interarrival * 1000.0,
+            frame_jitter_ms: self.frame_interarrival_average.get_std() * 1000.0,
+
+            frames_skipped: network_stats.frames_skipped,
+
+            shards_lost: shards_lost,
+            shards_duplicated: network_stats.duplicated_shard_counter,
+
+            network_throughput_bps: network_throughput_bps,
+            peak_network_throughput_bps: peak_network_throughput_bps,
+            ema_peak_throughput_bps: self.ema_peak_throughput_bps,
+            application_throughput_bps: application_throughput_bps,
+
+            nominal_bitrate: self.last_nominal_bitrate_stats.clone(),
+
+            threshold_gcc: network_stats.threshold_gcc,
+            internal_state_gcc: network_stats.internal_state_gcc,
+        }));
     }
 
     pub fn report_statistics_summary(&mut self) {
@@ -578,9 +571,10 @@ impl StatisticsManager {
             // todo: use target timestamp in nanoseconds. the dashboard needs to use the first
             // timestamp as the graph time origin.
             alvr_events::send_event(EventType::GraphStatistics(GraphStatistics {
-                frame_index: client_stats.frame_index,
+                frame_index: client_stats.frame_index, // added
+                is_idr: frame.is_idr,                  // added
 
-                frames_dropped: client_stats.frames_dropped,
+                frames_dropped: client_stats.frames_dropped, // added
 
                 total_pipeline_latency_s: client_stats.total_pipeline_latency.as_secs_f32(),
                 game_time_s: game_time_latency.as_secs_f32(),

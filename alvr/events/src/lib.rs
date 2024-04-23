@@ -50,6 +50,8 @@ pub struct NominalBitrateStats {
 #[derive(Serialize, Deserialize, Clone, Debug, Default)]
 pub struct GraphStatistics {
     pub frame_index: i32,
+    pub is_idr: bool,
+
     pub frames_dropped: u32,
 
     pub total_pipeline_latency_s: f32,
@@ -72,9 +74,9 @@ pub struct GraphStatistics {
 #[derive(Serialize, Deserialize, Clone, Debug, Default)]
 pub struct GraphNetworkStatistics {
     pub frame_index: u32,
-    pub is_idr: bool,
 
     pub frame_span_ms: f32,
+
     pub interarrival_jitter_ms: f32,
     pub ow_delay_ms: f32,
 
