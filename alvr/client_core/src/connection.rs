@@ -340,7 +340,10 @@ fn connection_pipeline(
             let Ok((header, nal)) = data.get() else {
                 return;
             };
-
+            if let Some(stats) = &mut *STATISTICS_MANAGER.lock() {
+                stats.report_video_packet_received(header.timestamp);
+            }
+            
             // periodically request an IDR frame using the settings' client_idr_refresh_interval_ms
             if Instant::now()
                 .saturating_duration_since(last_instant_IDR_client)
@@ -353,10 +356,7 @@ fn connection_pipeline(
                 last_instant_IDR_client = Instant::now();
             }
 
-            if let Some(stats) = &mut *STATISTICS_MANAGER.lock() {
-                stats.report_video_packet_received(header.timestamp);
-            }
-
+      
             if header.is_idr {
                 stream_corrupted = false;
             } else if data.had_packet_loss() {

@@ -259,7 +259,6 @@ fn client_thread(
                     alvr_client_core::report_frame_decoded(timestamp);
                 }
             }
-
             output_sender.send(window_output.clone()).ok();
         }
 

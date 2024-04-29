@@ -234,6 +234,7 @@ pub struct ClientStatistics {
     pub total_pipeline_latency: Duration,
 
     pub frames_dropped: u32,
+    pub duration_decoder_full: Duration, 
 }
 
 #[derive(Serialize, Deserialize, Clone, Debug)]
