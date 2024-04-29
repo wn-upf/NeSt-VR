@@ -97,6 +97,7 @@ pub struct GraphNetworkStatistics {
 
     pub threshold_gcc: f32,
     pub internal_state_gcc: StatesWebrtc,
+    pub rtt_alt_ms: f32, 
 }
 
 #[derive(Serialize, Deserialize, Clone, Debug)]

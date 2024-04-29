@@ -295,7 +295,7 @@ impl StatisticsManager {
     }
 
     // This statistics are reported for every succesfully received frame
-    pub fn report_network_statistics(&mut self, network_stats: NetworkStatisticsPacket) {
+    pub fn report_network_statistics(&mut self, network_stats: NetworkStatisticsPacket, rtt_alt: Duration) {
         self.packets_skipped_total += network_stats.frames_skipped as usize;
         self.packets_skipped_partial_sum += network_stats.frames_skipped as usize;
 
@@ -413,6 +413,8 @@ impl StatisticsManager {
 
             threshold_gcc: network_stats.threshold_gcc,
             internal_state_gcc: network_stats.internal_state_gcc,
+
+            rtt_alt_ms: rtt_alt.as_secs_f32() * 1000.0, 
         }));
     }
 

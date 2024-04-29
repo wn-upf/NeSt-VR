@@ -26,13 +26,14 @@ use alvr_session::{DscpTos, SocketBufferSize, SocketProtocol};
 use serde::{de::DeserializeOwned, Serialize};
 use std::{
     cmp::Ordering,
-    collections::{HashMap, HashSet},
+    collections::{HashMap, HashSet, VecDeque},
     marker::PhantomData,
     mem,
     net::{IpAddr, TcpListener, UdpSocket},
     sync::{mpsc, Arc},
     time::{Duration, Instant},
 };
+
 
 const Q_KALMAN: f32 = 10E-3;
 pub struct KalmanFilter {
@@ -164,6 +165,40 @@ impl<H> Buffer<H> {
     }
 }
 
+
+#[derive(Clone)]
+pub struct FrameTracker {  // just simple buffer that drops the older samples when more than 10 are inside,
+                            // used to store Instant/frame_id pairs to be used to compute network RTT independently
+    map: HashMap<u32, Instant>,
+    queue: VecDeque<u32>,
+    max_size: usize,
+}
+
+impl FrameTracker {
+    fn new(max_size: usize) -> Self {
+        FrameTracker {
+            map: HashMap::new(),
+            queue: VecDeque::new(),
+            max_size,
+        }
+    }
+    fn insert(&mut self, frame_id: u32, instant: Instant) {
+        self.map.insert(frame_id, instant);
+        self.queue.push_back(frame_id);
+        
+        // Drop oldest pairs if size exceeds max_size
+        while self.queue.len() > self.max_size {
+            if let Some(oldest_frame_id) = self.queue.pop_front() {
+                self.map.remove(&oldest_frame_id);
+            }
+        }
+    }
+    fn get_instant(&self, frame_id: u32) -> Option<&Instant> {
+        self.map.get(&frame_id)
+    }
+}
+
+
 #[derive(Clone)]
 pub struct StreamSender<H> {
     inner: Arc<Mutex<Box<dyn SocketWriter>>>,
@@ -176,6 +211,7 @@ pub struct StreamSender<H> {
 
     shards_count: usize,
     reference_time: Instant,
+    sentframe_buffer: FrameTracker, 
 }
 
 impl<H> StreamSender<H> {
@@ -184,6 +220,9 @@ impl<H> StreamSender<H> {
     }
     pub fn get_last_packet_id(&self) -> u32 {
         self.next_packet_index - 1
+    }
+    pub fn get_hashmap_frame_buffer(&self)-> HashMap<u32, Instant> {
+        self.sentframe_buffer.map.clone()
     }
 
     /// Shard and send a buffer with zero copies and zero allocations.
@@ -222,6 +261,10 @@ impl<H> StreamSender<H> {
             sub_buffer[18..22].copy_from_slice(&tx_r_instant.to_be_bytes());
 
             self.inner.lock().send(&sub_buffer[..packet_length])?;
+
+            if idx == shards_count{ //store next_packet_index - Instant value pair for RTT
+                self.sentframe_buffer.insert(self.next_packet_index, Instant::now())
+            }
         }
         self.shards_count = shards_count;
         self.next_packet_index += 1;
@@ -723,6 +766,7 @@ impl StreamSocket {
             _phantom: PhantomData,
             shards_count: 0,
             reference_time: Instant::now(),
+            sentframe_buffer: FrameTracker::new(10), 
         }
     }
 

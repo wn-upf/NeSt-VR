@@ -10,6 +10,7 @@ use crate::{
     FfiFov, FfiViewsConfig, VideoPacket, BITRATE_MANAGER, DECODER_CONFIG, LIFECYCLE_STATE,
     SERVER_DATA_MANAGER, STATISTICS_MANAGER, VIDEO_MIRROR_SENDER, VIDEO_RECORDING_FILE,
 };
+use std::sync::RwLock;
 use alvr_audio::AudioDevice;
 use alvr_common::{
     con_bail, debug, error,
@@ -31,21 +32,14 @@ use alvr_packets::{
 use alvr_session::{ControllersEmulationMode, FrameSize, OpenvrConfig, SessionConfig};
 use alvr_sockets::{
     PeerType, ProtoControlSocket, StreamSender, StreamSocketBuilder, KEEPALIVE_INTERVAL,
-    KEEPALIVE_TIMEOUT,
+    KEEPALIVE_TIMEOUT
 };
 use std::{
-    collections::{HashMap, HashSet},
-    io::Write,
-    net::IpAddr,
-    process::Command,
-    ptr,
-    sync::{
+    collections::{HashMap, HashSet}, hash::Hash, io::Write, net::IpAddr, process::Command, ptr, sync::{
         atomic::{AtomicBool, Ordering},
         mpsc::{RecvTimeoutError, SyncSender, TrySendError},
         Arc,
-    },
-    thread::{self, JoinHandle},
-    time::{Duration, Instant},
+    }, thread::{self, JoinHandle}, time::{Duration, Instant}
 };
 
 const RETRY_CONNECT_MIN_INTERVAL: Duration = Duration::from_secs(1);
@@ -558,8 +552,14 @@ fn connection_pipeline(
     *VIDEO_CHANNEL_SENDER.lock() = Some(video_channel_sender);
     *HAPTICS_SENDER.lock() = Some(haptics_sender);
 
+    // let mut frame_send_map_rtt: HashMap<u32, Instant> = HashMap::new(); //make higher level variable to clone HashMap
+    let frame_send_map_rtt: Arc<RwLock<HashMap<u32, Instant>>> = Arc::new(RwLock::new(HashMap::new()));
+
+
     let video_send_thread = thread::spawn({
         let client_hostname = client_hostname.clone();
+        let frame_send_map_rtt_clone: Arc<RwLock<HashMap<u32, Instant>>> = Arc::clone(&frame_send_map_rtt);
+
         move || {
             while is_streaming(&client_hostname) {
                 let VideoPacket { header, payload } =
@@ -575,6 +575,13 @@ fn connection_pipeline(
                     .get_range_mut(0, payload.len())
                     .copy_from_slice(&payload);
                 video_sender.send(buffer).ok();
+                
+                // Copy the hashmap from sent frames into the map to later compute RTT
+                let frame_send_map_rtt_clone_socket = video_sender.get_hashmap_frame_buffer(); 
+
+                // Lock the original RwLock and update it with the cloned map
+                let mut frame_send_map_rtt_lock = frame_send_map_rtt_clone.write().unwrap();
+                *frame_send_map_rtt_lock = frame_send_map_rtt_clone_socket.clone(); // make the Arc the Hashmap obtained from the function
 
                 let frame_index = video_sender.get_last_packet_id();
                 let shards_count = video_sender.get_shards_count();
@@ -938,6 +945,7 @@ fn connection_pipeline(
     });
 
     let control_receive_thread = thread::spawn({
+        let frame_send_map_rtt_clone: Arc<RwLock<HashMap<u32, Instant>>> = Arc::clone(&frame_send_map_rtt);
         let mut controller_button_mapping_manager = server_data_lock
             .settings()
             .headset
@@ -964,6 +972,8 @@ fn connection_pipeline(
             unsafe { crate::InitOpenvrClient() };
 
             let mut disconnection_deadline = Instant::now() + KEEPALIVE_TIMEOUT;
+            // Accessing the original HashMap from the main thread
+            let frame_send_map_rtt_lock = frame_send_map_rtt_clone.read().unwrap();
             while is_streaming(&client_hostname) {
                 let packet = match control_receiver.recv(STREAMING_RECV_TIMEOUT) {
                     Ok(packet) => packet,
@@ -1007,7 +1017,20 @@ fn connection_pipeline(
 
                     ClientControlPacket::NetworkStatistics(network_stats) => {
                         if let Some(stats) = &mut *STATISTICS_MANAGER.lock() {
-                            stats.report_network_statistics(network_stats);
+                            
+                            let frame_send_map_rtt_lock = frame_send_map_rtt.read().unwrap();
+
+                            let mut hashmap = frame_send_map_rtt_lock.clone();
+                            let now = Instant::now();                             
+                            let frame_id = network_stats.frame_index as u32; 
+                            let RTT_network_alt: Duration; 
+                            if let Some(send_instant) = hashmap.remove(&frame_id){
+                                RTT_network_alt = now.saturating_duration_since(send_instant);   
+                            }
+                            else{
+                                RTT_network_alt = Duration::ZERO; 
+                            }
+                            stats.report_network_statistics(network_stats, RTT_network_alt);
                         }
                     }
 
