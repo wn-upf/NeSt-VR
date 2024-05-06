@@ -54,6 +54,9 @@ static CONNECTION_THREADS: Lazy<Mutex<Vec<JoinHandle<()>>>> = Lazy::new(|| Mutex
 pub static CLIENTS_TO_BE_REMOVED: Lazy<Mutex<HashSet<String>>> =
     Lazy::new(|| Mutex::new(HashSet::new()));
 
+
+type InstantMap = Arc<RwLock<HashMap<u32, Instant>>>;
+
 fn align32(value: f32) -> u32 {
     ((value / 32.).floor() * 32.) as u32
 }
@@ -553,13 +556,11 @@ fn connection_pipeline(
     *HAPTICS_SENDER.lock() = Some(haptics_sender);
 
     // let mut frame_send_map_rtt: HashMap<u32, Instant> = HashMap::new(); //make higher level variable to clone HashMap
-    let frame_send_map_rtt: Arc<RwLock<HashMap<u32, Instant>>> = Arc::new(RwLock::new(HashMap::new()));
-
+    let map: InstantMap = Arc::new(RwLock::new(HashMap::new())); 
 
     let video_send_thread = thread::spawn({
         let client_hostname = client_hostname.clone();
-        let frame_send_map_rtt_clone: Arc<RwLock<HashMap<u32, Instant>>> = Arc::clone(&frame_send_map_rtt);
-
+        let map_clone: Arc<RwLock<HashMap<u32, Instant>>> = Arc::clone(&map); 
         move || {
             while is_streaming(&client_hostname) {
                 let VideoPacket { header, payload } =
@@ -577,11 +578,16 @@ fn connection_pipeline(
                 video_sender.send(buffer).ok();
                 
                 // Copy the hashmap from sent frames into the map to later compute RTT
-                let frame_send_map_rtt_clone_socket = video_sender.get_hashmap_frame_buffer(); 
-
-                // Lock the original RwLock and update it with the cloned map
-                let mut frame_send_map_rtt_lock = frame_send_map_rtt_clone.write().unwrap();
-                *frame_send_map_rtt_lock = frame_send_map_rtt_clone_socket.clone(); // make the Arc the Hashmap obtained from the function
+                let cloned_socket_map = video_sender.get_hashmap_frame_buffer(); 
+                
+                match map_clone.write() {
+                    Ok(mut guard) => {
+                        *guard = cloned_socket_map; // Update the guard with the new hashmap
+                    }
+                    Err(_) => {
+                        warn!("Failed to acquire write lock in RTT hashmap") ;
+                    }
+                }
 
                 let frame_index = video_sender.get_last_packet_id();
                 let shards_count = video_sender.get_shards_count();
@@ -945,7 +951,7 @@ fn connection_pipeline(
     });
 
     let control_receive_thread = thread::spawn({
-        let frame_send_map_rtt_clone: Arc<RwLock<HashMap<u32, Instant>>> = Arc::clone(&frame_send_map_rtt);
+        let map_clone: Arc<RwLock<HashMap<u32, Instant>>> = Arc::clone(&map); 
         let mut controller_button_mapping_manager = server_data_lock
             .settings()
             .headset
@@ -970,10 +976,8 @@ fn connection_pipeline(
         let client_hostname = client_hostname.clone();
         move || {
             unsafe { crate::InitOpenvrClient() };
-
             let mut disconnection_deadline = Instant::now() + KEEPALIVE_TIMEOUT;
             // Accessing the original HashMap from the main thread
-            let frame_send_map_rtt_lock = frame_send_map_rtt_clone.read().unwrap();
             while is_streaming(&client_hostname) {
                 let packet = match control_receiver.recv(STREAMING_RECV_TIMEOUT) {
                     Ok(packet) => packet,
@@ -1018,19 +1022,26 @@ fn connection_pipeline(
                     ClientControlPacket::NetworkStatistics(network_stats) => {
                         if let Some(stats) = &mut *STATISTICS_MANAGER.lock() {
                             
-                            let frame_send_map_rtt_lock = frame_send_map_rtt.read().unwrap();
+                            let map_rtt_lock = map_clone.read().unwrap(); 
+                            
+                            let mut hashmap = map_rtt_lock.clone();
+                            // warn!("Received NETWORK stats packet");                      // not deleting yet until completely tested
+                            // warn!("Hashmap KV pairs on RTT: \n"); 
+                            // for (key, value) in &hashmap {
+                            //     warn!("Key: {}, Value: {:?}", key, value);
+                            // }
 
-                            let mut hashmap = frame_send_map_rtt_lock.clone();
                             let now = Instant::now();                             
                             let frame_id = network_stats.frame_index as u32; 
-                            let RTT_network_alt: Duration; 
+                            let rtt_network_alt: Duration; 
                             if let Some(send_instant) = hashmap.remove(&frame_id){
-                                RTT_network_alt = now.saturating_duration_since(send_instant);   
+                                rtt_network_alt = now.saturating_duration_since(send_instant);   
                             }
                             else{
-                                RTT_network_alt = Duration::ZERO; 
+                                rtt_network_alt = Duration::ZERO;
+                                // warn!("ZERO??");  
                             }
-                            stats.report_network_statistics(network_stats, RTT_network_alt);
+                            stats.report_network_statistics(network_stats, rtt_network_alt);
                         }
                     }
 

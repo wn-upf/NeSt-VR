@@ -168,7 +168,7 @@ impl<H> Buffer<H> {
 
 #[derive(Clone)]
 pub struct FrameTracker {  // just simple buffer that drops the older samples when more than 10 are inside,
-                            // used to store Instant/frame_id pairs to be used to compute network RTT independently
+                           // used to store Instant/frame_id pairs to be used to compute network RTT independently
     map: HashMap<u32, Instant>,
     queue: VecDeque<u32>,
     max_size: usize,
@@ -262,7 +262,8 @@ impl<H> StreamSender<H> {
 
             self.inner.lock().send(&sub_buffer[..packet_length])?;
 
-            if idx == shards_count{ //store next_packet_index - Instant value pair for RTT
+            if idx == (shards_count - 1)
+            { //store next_packet_index - Instant value pair for RTT
                 self.sentframe_buffer.insert(self.next_packet_index, Instant::now())
             }
         }
