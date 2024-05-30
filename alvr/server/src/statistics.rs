@@ -395,6 +395,7 @@ impl StatisticsManager {
 
             interarrival_jitter_ms: network_stats.interarrival_jitter * 1000.0,
             ow_delay_ms: network_stats.ow_delay * 1000.0,
+            filtered_ow_delay_ms: network_stats.filtered_ow_delay * 1000.0, 
 
             frame_interarrival_ms: network_stats.frame_interarrival * 1000.0,
             frame_jitter_ms: self.frame_interarrival_average.get_std() * 1000.0,

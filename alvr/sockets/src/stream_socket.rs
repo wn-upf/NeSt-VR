@@ -262,7 +262,7 @@ impl<H> StreamSender<H> {
 
             self.inner.lock().send(&sub_buffer[..packet_length])?;
 
-            if idx == (shards_count - 1)
+            if idx == 0
             { //store next_packet_index - Instant value pair for RTT
                 self.sentframe_buffer.insert(self.next_packet_index, Instant::now())
             }
@@ -316,6 +316,7 @@ pub struct ReceiverData<H> {
 
     interarrival_jitter: f32,
     ow_delay: f32,
+    filtered_ow_delay: f32, 
 
     rx_bytes: u32,
     bytes_in_frame: u32,
@@ -352,6 +353,10 @@ impl<H> ReceiverData<H> {
     pub fn get_ow_delay(&self) -> f32 {
         self.ow_delay
     }
+    pub fn get_filtered_ow_delay(&self) -> f32 {
+        self.filtered_ow_delay
+    }
+
     pub fn get_rx_bytes(&self) -> u32 {
         self.rx_bytes
     }
@@ -417,6 +422,7 @@ struct ReconstructedPacket {
 
     interarrival_jitter: f32,
     ow_delay: f32,
+    filtered_ow_delay: f32, 
 
     rx_bytes: u32,
     bytes_in_frame: u32,
@@ -521,6 +527,7 @@ impl<H: DeserializeOwned + Serialize> StreamReceiver<H> {
 
             interarrival_jitter: packet.interarrival_jitter,
             ow_delay: packet.ow_delay,
+            filtered_ow_delay: packet.filtered_ow_delay,
 
             rx_bytes: rx_bytes_val,
             bytes_in_frame: packet.bytes_in_frame,
@@ -1091,6 +1098,7 @@ impl StreamSocket {
 
                     interarrival_jitter: self.interarrival_jitter,
                     ow_delay: self.kalman.ow_delay,
+                    filtered_ow_delay: self.kalman.m_current, 
 
                     rx_bytes: self.rx_bytes,
                     bytes_in_frame: all_bytes_in_frame,

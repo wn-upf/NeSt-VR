@@ -80,6 +80,7 @@ pub struct GraphNetworkStatistics {
 
     pub interarrival_jitter_ms: f32,
     pub ow_delay_ms: f32,
+    pub filtered_ow_delay_ms : f32, 
 
     pub frame_interarrival_ms: f32,
     pub frame_jitter_ms: f32,

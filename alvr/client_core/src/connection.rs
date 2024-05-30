@@ -319,6 +319,7 @@ fn connection_pipeline(
 
                             interarrival_jitter: data.get_interarrival_jitter(), // measure of the variability in the time between the reception of consecutive video shards
                             ow_delay: data.get_ow_delay(), // one-way delay of the received video shards
+                            filtered_ow_delay: data.get_filtered_ow_delay(), // kalman filtered one-way delay of the received video shards, as GCC does
 
                             frames_skipped: data.get_frames_skipped(), // number of frames skipped
 

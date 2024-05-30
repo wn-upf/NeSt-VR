@@ -85,6 +85,7 @@ pub struct NetworkStatisticsPacket {
 
     pub interarrival_jitter: f32,
     pub ow_delay: f32,
+    pub filtered_ow_delay: f32, 
 
     pub frames_skipped: u32,
 
