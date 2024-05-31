@@ -69,7 +69,7 @@ pub struct GraphStatistics {
 
     pub nominal_bitrate: NominalBitrateStats,
     pub actual_bitrate_bps: f32,
-    pub alternative_decoder_delay: f32, 
+    // pub alternative_decoder_delay: f32, 
 }
 
 #[derive(Serialize, Deserialize, Clone, Debug, Default)]

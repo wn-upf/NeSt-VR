@@ -33,6 +33,8 @@ pub struct BitrateManager {
     last_target_bitrate: f32,
 
     frame_interarrival_avg: f32,
+
+    alt_network_latency_window: SlidingWindowAverage<Duration>, 
 }
 
 impl BitrateManager {
@@ -63,6 +65,7 @@ impl BitrateManager {
             last_target_bitrate: 30_000_000.0,
 
             frame_interarrival_avg: 0.,
+            alt_network_latency_window: SlidingWindowAverage::new(Duration::from_millis(5), max_history_size, ), 
         }
     }
 
@@ -108,6 +111,16 @@ impl BitrateManager {
 
     // decoder_latency is used to learn a suitable maximum bitrate bound to avoid decoder runaway
     // latency
+
+    pub fn report_network_rtt(&mut self,
+        network_rtt: Duration, 
+    )
+    {
+        self.alt_network_latency_window.submit_sample(network_rtt); 
+
+
+    }
+
     pub fn report_frame_latencies(
         &mut self,
         config: &BitrateMode,
@@ -122,6 +135,7 @@ impl BitrateManager {
         }
         self.frame_interarrival_avg = frame_interarrival_avg;
 
+        // self.network_latency_average.submit_sample(network_latency);
         self.network_latency_average.submit_sample(network_latency);
 
         while let Some(&(timestamp_, size_bits)) = self.packet_sizes_bits_history.front() {
@@ -283,7 +297,7 @@ impl BitrateManager {
 
                 if let Switch::Enabled(max_ms) = max_network_latency_ms {
                     let max = initial_bitrate_average_bps * (*max_ms as f32 / 1000.0)
-                        / self.network_latency_average.get_average().as_secs_f32();
+                        / self.alt_network_latency_window.get_average().as_secs_f32();
                     bitrate_bps = f32::min(bitrate_bps, max);
 
                     stats.network_latency_limiter_bps = Some(max);

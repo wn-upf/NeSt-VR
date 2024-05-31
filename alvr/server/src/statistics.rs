@@ -594,7 +594,7 @@ impl StatisticsManager {
 
                 nominal_bitrate: self.last_nominal_bitrate_stats.clone(),
                 actual_bitrate_bps: bitrate_bps, // bitrate as computed by ALVR
-                alternative_decoder_delay: client_stats.duration_decoder_full.as_secs_f32(),
+                // alternative_decoder_delay: client_stats.duration_decoder_full.as_secs_f32(),
             }));
 
             self.report_statistics_summary();
