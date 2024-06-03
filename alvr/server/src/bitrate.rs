@@ -135,7 +135,6 @@ impl BitrateManager {
         }
         self.frame_interarrival_avg = frame_interarrival_avg;
 
-        // self.network_latency_average.submit_sample(network_latency);
         self.network_latency_average.submit_sample(network_latency);
 
         while let Some(&(timestamp_, size_bits)) = self.packet_sizes_bits_history.front() {
@@ -246,7 +245,6 @@ impl BitrateManager {
                          
                         let frame_interval = self.frame_interval_average.get_average(); 
                         let framerate = 1.0 / frame_interval.as_secs_f32().min(1.0);
-                        // warn!("frame interval : {:?}, framerate: {:?}, interarrival{:?},  random_prob{:?}, network_latency_avg {:?}", frame_interval, framerate, self.frame_interarrival_avg,  random_prob, self.network_latency_average.get_average() );
                         
                         let steps_bps = *steps * 1E6;  
                         
@@ -286,8 +284,8 @@ impl BitrateManager {
                 encoder_latency_limiter,
                 decoder_latency_limiter,
             } => {
-                // let initial_bitrate_average_bps = self.bitrate_average.get_average();
-                let initial_bitrate_average_bps = self.last_target_bitrate;
+                let initial_bitrate_average_bps = self.bitrate_average.get_average();
+                // let initial_bitrate_average_bps = self.last_target_bitrate;
 
                 let mut bitrate_bps = initial_bitrate_average_bps * saturation_multiplier;
                 stats.scaled_calculated_bps = Some(bitrate_bps);

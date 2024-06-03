@@ -1006,7 +1006,7 @@ For now works only on Windows+Nvidia"#
 
     #[schema(strings(display_name = "Client Request IDR interval"))]
     #[schema(flag = "steamvr-restart")]
-    #[schema(gui(slider(min = 5, max = 20000, step = 5)), suffix = "ms")]
+    #[schema(gui(slider(min = 5, max = 2000000, step = 5)), suffix = "ms")]
     pub client_idr_refresh_interval_ms: u64,
 
     #[schema(strings(
