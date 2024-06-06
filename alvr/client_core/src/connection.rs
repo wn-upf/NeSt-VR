@@ -346,16 +346,20 @@ fn connection_pipeline(
             }
             
             // periodically request an IDR frame using the settings' client_idr_refresh_interval_ms
-            if Instant::now()
-                .saturating_duration_since(last_instant_IDR_client)
-                .as_secs_f32()
-                >= interval_IDR_seconds_f32
-            {
-                if let Some(sender) = &mut *CONTROL_SENDER.lock() {
-                    sender.send(&ClientControlPacket::RequestIdr).ok();
+            
+            if (settings.connection.idr_periodic_bool){
+                if Instant::now()
+                    .saturating_duration_since(last_instant_IDR_client)
+                    .as_secs_f32()
+                    >= interval_IDR_seconds_f32
+                {
+                    if let Some(sender) = &mut *CONTROL_SENDER.lock() {
+                        sender.send(&ClientControlPacket::RequestIdr).ok();
+                    }
+                    last_instant_IDR_client = Instant::now();
                 }
-                last_instant_IDR_client = Instant::now();
             }
+
 
       
             if header.is_idr {

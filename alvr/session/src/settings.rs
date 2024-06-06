@@ -318,6 +318,12 @@ pub enum BitrateMode {
         #[schema(gui(slider(min = 0.0, max = 1.0, logarithmic)))]
         threshold_random_uniform: Switch<f32>,
 
+        #[schema(strings(display_name = "Update Interval for heuristic"))]
+        #[schema(flag = "real-time")]
+        #[schema(gui(slider(min = 0.0, max = 5.0, logarithmic)))]
+        update_interval_heuristic: Switch<f32>,
+
+
         // #[schema(flag = "real-time")]
         // encoder_latency_limiter: Switch<EncoderLatencyLimiter>,
 
@@ -1004,6 +1010,12 @@ For now works only on Windows+Nvidia"#
     #[schema(gui(slider(min = 5, max = 1000, step = 5)), suffix = "ms")]
     pub minimum_idr_interval_ms: u64,
 
+
+    #[schema(strings(
+        help = r#"If we want IDRs to be periodic instead of when a frame is lost"#
+    ))]
+    pub idr_periodic_bool: bool,
+
     #[schema(strings(display_name = "Client Request IDR interval"))]
     #[schema(flag = "steamvr-restart")]
     #[schema(gui(slider(min = 5, max = 2000000, step = 5)), suffix = "ms")]
@@ -1249,6 +1261,10 @@ pub fn session_settings_default() -> SettingsDefault {
                             enabled: true,
                             content: 0.25, 
                         },
+                        update_interval_heuristic: SwitchDefault{
+                            enabled: true,
+                            content: 1.0, 
+                        }, 
                     }, 
                     variant: BitrateModeDefaultVariant::SimpleHeuristic,
                 },
@@ -1613,6 +1629,7 @@ pub fn session_settings_default() -> SettingsDefault {
             max_queued_server_video_frames: 1024,
             avoid_video_glitching: false,
             minimum_idr_interval_ms: 100,
+            idr_periodic_bool: false, 
             client_idr_refresh_interval_ms: 125,
             on_connect_script: "".into(),
             on_disconnect_script: "".into(),
