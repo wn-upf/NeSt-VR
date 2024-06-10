@@ -263,7 +263,7 @@ impl BitrateManager {
                             let steps_bps = *steps * 1E6;
 
                             if (1. / self.frame_interarrival_avg) >= 0.95 * framerate {
-                                if self.network_latency_average.get_average().as_secs_f32()
+                                if self.alt_network_latency_window.get_average().as_secs_f32()
                                     > frame_interval.as_secs_f32() * RTT_threshold_mult
                                 {
                                     if random_prob >= *threshold {
@@ -312,7 +312,7 @@ impl BitrateManager {
 
                 if let Switch::Enabled(max_ms) = max_network_latency_ms {
                     let max = initial_bitrate_average_bps * (*max_ms as f32 / 1000.0)
-                        / self.alt_network_latency_window.get_average().as_secs_f32();
+                        / self.network_latency_average.get_average().as_secs_f32();
                     bitrate_bps = f32::min(bitrate_bps, max);
 
                     stats.network_latency_limiter_bps = Some(max);
