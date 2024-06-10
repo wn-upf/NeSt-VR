@@ -309,7 +309,7 @@ fn connection_pipeline(
                         NetworkStatisticsPacket {
                             // Frame specific metrics
                             frame_index: data.get_frame_index() as i32, // index of the current frame
-                            frame_span: data.get_frame_span(),   // duration of the current frame
+                            frame_span: data.get_frame_span(), // duration of the current frame
 
                             bytes_in_frame: data.get_bytes_in_frame(), // bytes received for the current frame, including both prefixes and network headers
                             bytes_in_frame_app: data.get_bytes_in_frame_app(), // bytes received for the current frame, excluding both prefixes and network headers
@@ -344,10 +344,10 @@ fn connection_pipeline(
             if let Some(stats) = &mut *STATISTICS_MANAGER.lock() {
                 stats.report_video_packet_received(header.timestamp);
             }
-            
+
             // periodically request an IDR frame using the settings' client_idr_refresh_interval_ms
-            
-            if (settings.connection.idr_periodic_bool){
+
+            if settings.connection.idr_periodic_bool {
                 if Instant::now()
                     .saturating_duration_since(last_instant_IDR_client)
                     .as_secs_f32()
@@ -360,8 +360,6 @@ fn connection_pipeline(
                 }
             }
 
-
-      
             if header.is_idr {
                 stream_corrupted = false;
             } else if data.had_packet_loss() {

@@ -98,7 +98,8 @@ impl StatisticsManager {
             frame.client_stats.target_timestamp == target_timestamp
                 && frame.client_stats.frame_index == -1
         }) {
-            frame.client_stats.duration_decoder_full = Instant::now().saturating_duration_since(frame.video_packet_received); 
+            frame.client_stats.duration_decoder_full =
+                Instant::now().saturating_duration_since(frame.video_packet_received);
             frame.client_stats.frame_index = frame_index as i32;
             frame.client_stats.frames_dropped = frames_dropped;
         }

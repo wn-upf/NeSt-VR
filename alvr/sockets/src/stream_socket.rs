@@ -34,7 +34,6 @@ use std::{
     time::{Duration, Instant},
 };
 
-
 const Q_KALMAN: f32 = 10E-3;
 pub struct KalmanFilter {
     ow_delay: f32,
@@ -165,10 +164,10 @@ impl<H> Buffer<H> {
     }
 }
 
-
 #[derive(Clone)]
-pub struct FrameTracker {  // just simple buffer that drops the older samples when more than 10 are inside,
-                           // used to store Instant/frame_id pairs to be used to compute network RTT independently
+pub struct FrameTracker {
+    // just simple buffer that drops the older samples when more than 10 are inside,
+    // used to store Instant/frame_id pairs to be used to compute network RTT independently
     map: HashMap<u32, Instant>,
     queue: VecDeque<u32>,
     max_size: usize,
@@ -185,7 +184,7 @@ impl FrameTracker {
     fn insert(&mut self, frame_id: u32, instant: Instant) {
         self.map.insert(frame_id, instant);
         self.queue.push_back(frame_id);
-        
+
         // Drop oldest pairs if size exceeds max_size
         while self.queue.len() > self.max_size {
             if let Some(oldest_frame_id) = self.queue.pop_front() {
@@ -197,7 +196,6 @@ impl FrameTracker {
         self.map.get(&frame_id)
     }
 }
-
 
 #[derive(Clone)]
 pub struct StreamSender<H> {
@@ -211,7 +209,7 @@ pub struct StreamSender<H> {
 
     shards_count: usize,
     reference_time: Instant,
-    sentframe_buffer: FrameTracker, 
+    sentframe_buffer: FrameTracker,
 }
 
 impl<H> StreamSender<H> {
@@ -221,7 +219,7 @@ impl<H> StreamSender<H> {
     pub fn get_last_packet_id(&self) -> u32 {
         self.next_packet_index - 1
     }
-    pub fn get_hashmap_frame_buffer(&self)-> HashMap<u32, Instant> {
+    pub fn get_hashmap_frame_buffer(&self) -> HashMap<u32, Instant> {
         self.sentframe_buffer.map.clone()
     }
 
@@ -262,9 +260,10 @@ impl<H> StreamSender<H> {
 
             self.inner.lock().send(&sub_buffer[..packet_length])?;
 
-            if idx == 0
-            { //store next_packet_index - Instant value pair for RTT
-                self.sentframe_buffer.insert(self.next_packet_index, Instant::now())
+            if idx == 0 {
+                //store next_packet_index - Instant value pair for RTT
+                self.sentframe_buffer
+                    .insert(self.next_packet_index, Instant::now())
             }
         }
         self.shards_count = shards_count;
@@ -316,7 +315,7 @@ pub struct ReceiverData<H> {
 
     interarrival_jitter: f32,
     ow_delay: f32,
-    filtered_ow_delay: f32, 
+    filtered_ow_delay: f32,
 
     rx_bytes: u32,
     bytes_in_frame: u32,
@@ -422,7 +421,7 @@ struct ReconstructedPacket {
 
     interarrival_jitter: f32,
     ow_delay: f32,
-    filtered_ow_delay: f32, 
+    filtered_ow_delay: f32,
 
     rx_bytes: u32,
     bytes_in_frame: u32,
@@ -774,7 +773,7 @@ impl StreamSocket {
             _phantom: PhantomData,
             shards_count: 0,
             reference_time: Instant::now(),
-            sentframe_buffer: FrameTracker::new(10), 
+            sentframe_buffer: FrameTracker::new(10),
         }
     }
 
@@ -1098,7 +1097,7 @@ impl StreamSocket {
 
                     interarrival_jitter: self.interarrival_jitter,
                     ow_delay: self.kalman.ow_delay,
-                    filtered_ow_delay: self.kalman.m_current, 
+                    filtered_ow_delay: self.kalman.m_current,
 
                     rx_bytes: self.rx_bytes,
                     bytes_in_frame: all_bytes_in_frame,

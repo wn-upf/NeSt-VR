@@ -60,13 +60,12 @@ pub enum LifecycleState {
 }
 
 #[derive(Serialize, Deserialize, Clone, Copy, Default, Debug)]
-pub enum StatesWebrtc{
+pub enum StatesWebrtc {
     OVERUSE,
     UNDERUSE,
     #[default]
     NORMAL,
 }
-
 
 #[derive(Serialize, Deserialize, Clone, Debug, PartialEq, Eq)]
 pub enum ConnectionState {

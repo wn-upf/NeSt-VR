@@ -34,12 +34,11 @@ pub struct BitrateManager {
 
     frame_interarrival_avg: f32,
 
-    alt_network_latency_window: SlidingWindowAverage<Duration>, 
-    update_interval_setting: Duration,  
+    alt_network_latency_window: SlidingWindowAverage<Duration>,
+    update_interval_setting: Duration,
 }
 impl BitrateManager {
     pub fn new(max_history_size: usize, initial_framerate: f32) -> Self {
-               
         Self {
             nominal_frame_interval: Duration::from_secs_f32(1. / initial_framerate),
             frame_interval_average: SlidingWindowAverage::new(
@@ -66,8 +65,11 @@ impl BitrateManager {
             last_target_bitrate: 30_000_000.0,
 
             frame_interarrival_avg: 0.,
-            alt_network_latency_window: SlidingWindowAverage::new(Duration::from_millis(5), max_history_size, ), 
-            update_interval_setting: UPDATE_INTERVAL, 
+            alt_network_latency_window: SlidingWindowAverage::new(
+                Duration::from_millis(5),
+                max_history_size,
+            ),
+            update_interval_setting: UPDATE_INTERVAL,
         }
     }
 
@@ -114,13 +116,8 @@ impl BitrateManager {
     // decoder_latency is used to learn a suitable maximum bitrate bound to avoid decoder runaway
     // latency
 
-    pub fn report_network_rtt(&mut self,
-        network_rtt: Duration, 
-    )
-    {
-        self.alt_network_latency_window.submit_sample(network_rtt); 
-
-
+    pub fn report_network_rtt(&mut self, network_rtt: Duration) {
+        self.alt_network_latency_window.submit_sample(network_rtt);
     }
 
     pub fn report_frame_latencies(
@@ -138,7 +135,7 @@ impl BitrateManager {
         self.frame_interarrival_avg = frame_interarrival_avg;
 
         self.network_latency_average.submit_sample(network_latency);
-        
+
         while let Some(&(timestamp_, size_bits)) = self.packet_sizes_bits_history.front() {
             if timestamp_ == timestamp {
                 self.bitrate_average
@@ -180,22 +177,19 @@ impl BitrateManager {
         config: &BitrateConfig,
     ) -> (FfiDynamicEncoderParams, Option<NominalBitrateStats>) {
         let now = Instant::now();
-                
-        if let BitrateMode::SimpleHeuristic{
-            update_interval_heuristic, 
+
+        if let BitrateMode::SimpleHeuristic {
+            update_interval_heuristic,
             ..
-            } = &config.mode
+        } = &config.mode
         {
-            if let Switch::Enabled(time_update) = update_interval_heuristic
-            {
-                self.update_interval_setting = Duration::from_secs_f32(*time_update);    
+            if let Switch::Enabled(time_update) = update_interval_heuristic {
+                self.update_interval_setting = Duration::from_secs_f32(*time_update);
+            } else {
+                self.update_interval_setting = UPDATE_INTERVAL;
             }
-            else{
-                self.update_interval_setting = UPDATE_INTERVAL; 
-                }
-        } 
-        else{
-            self.update_interval_setting = UPDATE_INTERVAL; 
+        } else {
+            self.update_interval_setting = UPDATE_INTERVAL;
         }
 
         if self
@@ -232,7 +226,8 @@ impl BitrateManager {
                 min_bitrate_mbps,
                 steps_mbps,
                 threshold_random_uniform,
-                update_interval_heuristic, 
+                update_interval_heuristic,
+                multiplier_RTT_threshold,
             } => {
                 //define generator and sample from uniform dist. for heuristic
                 let mut rng = thread_rng();
@@ -259,30 +254,32 @@ impl BitrateManager {
 
                 let initial_bitrate = self.last_target_bitrate;
                 let mut bitrate_bps: f32 = initial_bitrate;
-                if let Switch::Enabled(threshold) = threshold_random_uniform {
-                    if let Switch::Enabled(steps) = steps_mbps {
-                        
-                         
-                        let frame_interval = self.frame_interval_average.get_average(); 
-                        let framerate = 1.0 / frame_interval.as_secs_f32().min(1.0);
-                        
-                        let steps_bps = *steps * 1E6;  
-                        
-                        if (1. / self.frame_interarrival_avg) >= 0.95 * framerate {
-                            if self.network_latency_average.get_average() > frame_interval {
-                                if random_prob >= *threshold {
-                                    bitrate_bps = bitrate_bps - steps_bps; // decrease bitrate by 1 step
+                if let Switch::Enabled(RTT_threshold_mult) = *multiplier_RTT_threshold {
+                    if let Switch::Enabled(threshold) = threshold_random_uniform {
+                        if let Switch::Enabled(steps) = steps_mbps {
+                            let frame_interval = self.frame_interval_average.get_average();
+                            let framerate = 1.0 / frame_interval.as_secs_f32().min(1.0);
+
+                            let steps_bps = *steps * 1E6;
+
+                            if (1. / self.frame_interarrival_avg) >= 0.95 * framerate {
+                                if self.network_latency_average.get_average().as_secs_f32()
+                                    > frame_interval.as_secs_f32() * RTT_threshold_mult
+                                {
+                                    if random_prob >= *threshold {
+                                        bitrate_bps = bitrate_bps - steps_bps; // decrease bitrate by 1 step
+                                    }
+                                } else {
+                                    if random_prob <= *threshold {
+                                        bitrate_bps = bitrate_bps + steps_bps; // increase bitrate by 1 step
+                                    }
                                 }
                             } else {
-                                if random_prob <= *threshold {
-                                    bitrate_bps = bitrate_bps + steps_bps; // increase bitrate by 1 step
-                                }
+                                bitrate_bps = bitrate_bps - steps_bps; // decrease bitrate by 1 step
                             }
-                        } else {
-                            bitrate_bps = bitrate_bps - steps_bps; // decrease bitrate by 1 step
+                            bitrate_bps =
+                                minmax_bitrate(bitrate_bps, max_bitrate_mbps, min_bitrate_mbps);
                         }
-                        bitrate_bps =
-                            minmax_bitrate(bitrate_bps, max_bitrate_mbps, min_bitrate_mbps);
                     }
                 }
                 self.last_target_bitrate = bitrate_bps;

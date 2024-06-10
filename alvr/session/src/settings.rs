@@ -311,7 +311,7 @@ pub enum BitrateMode {
         #[schema(strings(display_name = "Steps of heuristic in mbps"))]
         #[schema(flag = "real-time")]
         #[schema(gui(slider(min = 1.0, max = 100.0, logarithmic)))]
-        steps_mbps: Switch<f32>, 
+        steps_mbps: Switch<f32>,
 
         #[schema(strings(display_name = "Threshold of Random Uniform distribution"))]
         #[schema(flag = "real-time")]
@@ -323,7 +323,10 @@ pub enum BitrateMode {
         #[schema(gui(slider(min = 0.0, max = 5.0, logarithmic)))]
         update_interval_heuristic: Switch<f32>,
 
-
+        #[schema(strings(display_name = "Multiplier for the threshold of 1/FPS in heuristic"))]
+        #[schema(flag = "real-time")]
+        #[schema(gui(slider(min = 0.1, max = 5.0, logarithmic)))]
+        multiplier_RTT_threshold: Switch<f32>,
         // #[schema(flag = "real-time")]
         // encoder_latency_limiter: Switch<EncoderLatencyLimiter>,
 
@@ -1010,10 +1013,7 @@ For now works only on Windows+Nvidia"#
     #[schema(gui(slider(min = 5, max = 1000, step = 5)), suffix = "ms")]
     pub minimum_idr_interval_ms: u64,
 
-
-    #[schema(strings(
-        help = r#"If we want IDRs to be periodic instead of when a frame is lost"#
-    ))]
+    #[schema(strings(help = r#"If we want IDRs to be periodic instead of when a frame is lost"#))]
     pub idr_periodic_bool: bool,
 
     #[schema(strings(display_name = "Client Request IDR interval"))]
@@ -1252,20 +1252,24 @@ pub fn session_settings_default() -> SettingsDefault {
                             enabled: true,
                             content: 30.0,
                         },
-                        
-                        steps_mbps: SwitchDefault{
+
+                        steps_mbps: SwitchDefault {
                             enabled: true,
-                            content: 10.0, 
+                            content: 10.0,
                         },
-                        threshold_random_uniform: SwitchDefault{
+                        threshold_random_uniform: SwitchDefault {
                             enabled: true,
-                            content: 0.25, 
+                            content: 0.25,
                         },
-                        update_interval_heuristic: SwitchDefault{
+                        update_interval_heuristic: SwitchDefault {
                             enabled: true,
-                            content: 1.0, 
-                        }, 
-                    }, 
+                            content: 1.0,
+                        },
+                        multiplier_RTT_threshold: SwitchDefault {
+                            enabled: true,
+                            content: 2.0,
+                        },
+                    },
                     variant: BitrateModeDefaultVariant::SimpleHeuristic,
                 },
                 adapt_to_framerate: SwitchDefault {
@@ -1629,7 +1633,7 @@ pub fn session_settings_default() -> SettingsDefault {
             max_queued_server_video_frames: 1024,
             avoid_video_glitching: false,
             minimum_idr_interval_ms: 100,
-            idr_periodic_bool: false, 
+            idr_periodic_bool: false,
             client_idr_refresh_interval_ms: 125,
             on_connect_script: "".into(),
             on_disconnect_script: "".into(),

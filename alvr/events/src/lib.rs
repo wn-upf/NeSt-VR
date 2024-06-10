@@ -69,7 +69,7 @@ pub struct GraphStatistics {
 
     pub nominal_bitrate: NominalBitrateStats,
     pub actual_bitrate_bps: f32,
-    // pub alternative_decoder_delay: f32, 
+    // pub alternative_decoder_delay: f32,
 }
 
 #[derive(Serialize, Deserialize, Clone, Debug, Default)]
@@ -80,7 +80,7 @@ pub struct GraphNetworkStatistics {
 
     pub interarrival_jitter_ms: f32,
     pub ow_delay_ms: f32,
-    pub filtered_ow_delay_ms : f32, 
+    pub filtered_ow_delay_ms: f32,
 
     pub frame_interarrival_ms: f32,
     pub frame_jitter_ms: f32,
@@ -99,7 +99,7 @@ pub struct GraphNetworkStatistics {
 
     pub threshold_gcc: f32,
     pub internal_state_gcc: StatesWebrtc,
-    pub rtt_alt_ms: f32, 
+    pub rtt_alt_ms: f32,
 }
 
 #[derive(Serialize, Deserialize, Clone, Debug)]

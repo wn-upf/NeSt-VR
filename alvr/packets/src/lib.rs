@@ -85,12 +85,12 @@ pub struct NetworkStatisticsPacket {
 
     pub interarrival_jitter: f32,
     pub ow_delay: f32,
-    pub filtered_ow_delay: f32, 
+    pub filtered_ow_delay: f32,
 
     pub frames_skipped: u32,
 
     pub rx_bytes: u32,
-    
+
     pub rx_shard_counter: u32,
     pub duplicated_shard_counter: u32,
 
@@ -100,7 +100,6 @@ pub struct NetworkStatisticsPacket {
     pub threshold_gcc: f32,
     pub internal_state_gcc: StatesWebrtc,
 }
-
 
 #[derive(Serialize, Deserialize, Clone, Copy, Debug)]
 pub enum ButtonValue {
@@ -129,7 +128,7 @@ pub enum ClientControlPacket {
     Reserved(String),
     ReservedBuffer(Vec<u8>),
 
-    NetworkStatistics(NetworkStatisticsPacket)
+    NetworkStatistics(NetworkStatisticsPacket),
 }
 
 #[derive(Serialize, Deserialize, Default)]
@@ -235,7 +234,7 @@ pub struct ClientStatistics {
     pub total_pipeline_latency: Duration,
 
     pub frames_dropped: u32,
-    pub duration_decoder_full: Duration, 
+    pub duration_decoder_full: Duration,
 }
 
 #[derive(Serialize, Deserialize, Clone, Debug)]

@@ -183,7 +183,6 @@ impl StatisticsTab {
             });
         }
     }
-    
 
     fn draw_latency_graph(&self, ui: &mut Ui, available_width: f32) {
         let mut data = statistics::Data::new(
@@ -440,7 +439,6 @@ impl StatisticsTab {
                 let mut frame_interarrival = Vec::with_capacity(GRAPH_HISTORY_SIZE);
                 let mut frame_jitter = Vec::with_capacity(GRAPH_HISTORY_SIZE);
 
-
                 for i in 0..GRAPH_HISTORY_SIZE {
                     let pointer_graphstatistics = &self.history_network[i];
                     // new stats
@@ -456,7 +454,6 @@ impl StatisticsTab {
                 draw_lines(painter, frame_interarrival, Color32::LIGHT_RED);
                 draw_lines(painter, frame_span, Color32::LIGHT_BLUE);
                 draw_lines(painter, frame_jitter, Color32::LIGHT_YELLOW);
-
             },
             |ui, stats| {
                 fn maybe_label(
