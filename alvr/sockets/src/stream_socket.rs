@@ -192,9 +192,6 @@ impl FrameTracker {
             }
         }
     }
-    fn get_instant(&self, frame_id: u32) -> Option<&Instant> {
-        self.map.get(&frame_id)
-    }
 }
 
 #[derive(Clone)]

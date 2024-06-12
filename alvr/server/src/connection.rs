@@ -36,7 +36,6 @@ use alvr_sockets::{
 use std::sync::RwLock;
 use std::{
     collections::{HashMap, HashSet},
-    hash::Hash,
     io::Write,
     net::IpAddr,
     process::Command,

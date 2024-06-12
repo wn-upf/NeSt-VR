@@ -326,15 +326,7 @@ pub enum BitrateMode {
         #[schema(strings(display_name = "Multiplier for the threshold of 1/FPS in heuristic"))]
         #[schema(flag = "real-time")]
         #[schema(gui(slider(min = 0.1, max = 5.0, logarithmic)))]
-        multiplier_RTT_threshold: Switch<f32>,
-        // #[schema(flag = "real-time")]
-        // encoder_latency_limiter: Switch<EncoderLatencyLimiter>,
-
-        // #[schema(strings(
-        //     help = "Currently there is a bug where the decoder latency keeps rising when above a certain bitrate"
-        // ))]
-        // #[schema(flag = "real-time")]
-        // decoder_latency_limiter: Switch<DecoderLatencyLimiter>,
+        multiplier_rtt_threshold: Switch<f32>,
     },
 }
 
@@ -1265,7 +1257,7 @@ pub fn session_settings_default() -> SettingsDefault {
                             enabled: true,
                             content: 1.0,
                         },
-                        multiplier_RTT_threshold: SwitchDefault {
+                        multiplier_rtt_threshold: SwitchDefault {
                             enabled: true,
                             content: 2.0,
                         },

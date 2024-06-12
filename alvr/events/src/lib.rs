@@ -5,13 +5,13 @@ use serde::{Deserialize, Serialize};
 use std::{path::PathBuf, time::Duration};
 #[derive(Serialize, Deserialize, Clone, Debug, Default)]
 pub struct StatisticsSummary {
-    pub frame_jitter_ms: f32,
-
     pub video_packets_total: usize,
     pub video_packets_per_sec: usize,
 
     pub video_mbytes_total: usize,
     pub video_mbits_per_sec: f32,
+
+    pub video_throughput_mbits_per_sec: f32,
 
     pub total_pipeline_latency_average_ms: f32,
     pub game_delay_average_ms: f32,
@@ -28,6 +28,8 @@ pub struct StatisticsSummary {
 
     pub packets_skipped_total: usize,
     pub packets_skipped_per_sec: usize,
+
+    pub frame_jitter_ms: f32,
 
     pub client_fps: f32,
     pub server_fps: f32,
@@ -64,23 +66,29 @@ pub struct GraphStatistics {
     pub client_compositor_s: f32,
     pub vsync_queue_s: f32,
 
-    pub client_fps: f32,
-    pub server_fps: f32,
+    //pub client_fps: f32,
+    //pub server_fps: f32,
 
     pub nominal_bitrate: NominalBitrateStats,
     pub actual_bitrate_bps: f32,
-    // pub alternative_decoder_delay: f32,
 }
 
 #[derive(Serialize, Deserialize, Clone, Debug, Default)]
 pub struct GraphNetworkStatistics {
     pub frame_index: u32,
 
+    pub client_fps: f32,
+    pub server_fps: f32,
+
     pub frame_span_ms: f32,
 
     pub interarrival_jitter_ms: f32,
+    
     pub ow_delay_ms: f32,
     pub filtered_ow_delay_ms: f32,
+
+    pub rtt_alt_ms: f32,
+
 
     pub frame_interarrival_ms: f32,
     pub frame_jitter_ms: f32,
@@ -91,15 +99,14 @@ pub struct GraphNetworkStatistics {
     pub shards_duplicated: u32,
 
     pub network_throughput_bps: f32,
+
     pub peak_network_throughput_bps: f32,
     pub ema_peak_throughput_bps: f32,
-    pub application_throughput_bps: f32,
 
     pub nominal_bitrate: NominalBitrateStats,
 
     pub threshold_gcc: f32,
     pub internal_state_gcc: StatesWebrtc,
-    pub rtt_alt_ms: f32,
 }
 
 #[derive(Serialize, Deserialize, Clone, Debug)]

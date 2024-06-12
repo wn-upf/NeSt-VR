@@ -59,7 +59,7 @@ impl StatisticsTab {
                 self.draw_latency_graph(ui, available_width);
                 self.draw_fps_graph(ui, available_width);
                 self.draw_bitrate_graph(ui, available_width);
-                self.draw_3throughput_graphs(ui, available_width);
+                self.draw_throughput_graphs(ui, available_width);
                 self.draw_jitter(ui, available_width);
                 self.draw_frameloss(ui, available_width);
                 self.draw_frame_span_interarrival(ui, available_width);
@@ -249,10 +249,10 @@ impl StatisticsTab {
 
     fn draw_fps_graph(&self, ui: &mut Ui, available_width: f32) {
         let mut data = statistics::Data::new(
-            self.history
+            self.history_network
                 .iter()
                 .map(|stats| stats.client_fps)
-                .chain(self.history.iter().map(|stats| stats.server_fps))
+                .chain(self.history_network.iter().map(|stats| stats.server_fps))
                 .map(|v| v as f64)
                 .collect::<Vec<_>>(),
         );
@@ -262,7 +262,7 @@ impl StatisticsTab {
         let max = upper_quantile + (upper_quantile - lower_quantile);
         let min = 0.0;
 
-        self.draw_graph(
+        self.draw_network_graph(
             ui,
             available_width,
             "Framerate",
@@ -271,8 +271,8 @@ impl StatisticsTab {
                 let (server_fps_points, client_fps_points) = (0..GRAPH_HISTORY_SIZE)
                     .map(|i| {
                         (
-                            to_screen_trans * pos2(i as f32, self.history[i].server_fps),
-                            to_screen_trans * pos2(i as f32, self.history[i].client_fps),
+                            to_screen_trans * pos2(i as f32, self.history_network[i].server_fps),
+                            to_screen_trans * pos2(i as f32, self.history_network[i].client_fps),
                         )
                     })
                     .unzip();
@@ -312,7 +312,6 @@ impl StatisticsTab {
 
                 for i in 0..GRAPH_HISTORY_SIZE {
                     let pointer_graphstatistics = &self.history_network[i];
-                    // new stats
 
                     let value_jitt = pointer_graphstatistics.interarrival_jitter_ms;
                     interarrival_jitter.push(to_screen_trans * pos2(i as f32, value_jitt));
@@ -441,7 +440,7 @@ impl StatisticsTab {
 
                 for i in 0..GRAPH_HISTORY_SIZE {
                     let pointer_graphstatistics = &self.history_network[i];
-                    // new stats
+
                     let fs = pointer_graphstatistics.frame_span_ms;
                     frame_span.push(to_screen_trans * pos2(i as f32, fs as f32));
 
@@ -490,7 +489,7 @@ impl StatisticsTab {
         )
     }
 
-    fn draw_3throughput_graphs(&self, ui: &mut Ui, available_width: f32) {
+    fn draw_throughput_graphs(&self, ui: &mut Ui, available_width: f32) {
         let mut data = statistics::Data::new(
             self.history_network
                 .iter()
@@ -500,12 +499,10 @@ impl StatisticsTab {
         self.draw_network_graph(
             ui,
             available_width,
-            "Network and Application Throughput",
+            "Video Network Throughput",
             0.0..=(data.quantile(UPPER_QUANTILE) * 2.) as f32 / 1e6,
             |painter, to_screen_trans| {
                 let mut network_throughput_bps: Vec<Pos2> = Vec::with_capacity(GRAPH_HISTORY_SIZE);
-                let mut application_throughput_bps: Vec<Pos2> =
-                    Vec::with_capacity(GRAPH_HISTORY_SIZE);
 
                 let mut requested = Vec::with_capacity(GRAPH_HISTORY_SIZE);
 
@@ -516,13 +513,9 @@ impl StatisticsTab {
                     let value_nw = pointer_graphstatistics.network_throughput_bps;
                     network_throughput_bps.push(to_screen_trans * pos2(i as f32, value_nw / 1e6));
 
-                    let value_app = pointer_graphstatistics.application_throughput_bps;
-                    application_throughput_bps
-                        .push(to_screen_trans * pos2(i as f32, value_app / 1e6));
                     requested.push(to_screen_trans * pos2(i as f32, nom_br.requested_bps / 1e6));
                 }
                 draw_lines(painter, network_throughput_bps, Color32::BLUE);
-                draw_lines(painter, application_throughput_bps, Color32::YELLOW);
                 draw_lines(painter, requested, theme::OK_GREEN);
             },
             |ui, stats| {
@@ -547,11 +540,10 @@ impl StatisticsTab {
                 );
                 maybe_label(
                     ui,
-                    "Application Throughput",
-                    Some(graphstats.application_throughput_bps),
-                    Color32::YELLOW,
+                    "Requested Bitrate",
+                    Some(n.requested_bps),
+                    theme::OK_GREEN,
                 );
-                maybe_label(ui, "Requested", Some(n.requested_bps), theme::OK_GREEN);
             },
         )
     }
@@ -681,6 +673,12 @@ impl StatisticsTab {
 
             ui[0].label("Bitrate:");
             ui[1].label(&format!("{:.1} Mbps", statistics.video_mbits_per_sec));
+
+            ui[0].label("Throughput:");
+            ui[1].label(&format!(
+                "{:.1} Mbps",
+                statistics.video_throughput_mbits_per_sec
+            ));
 
             ui[0].label("Game delay:");
             ui[1].label(&format!("{:.2} ms", statistics.game_delay_average_ms));

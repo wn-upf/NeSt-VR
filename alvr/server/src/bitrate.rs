@@ -81,11 +81,12 @@ impl BitrateManager {
         let interval = now - self.last_frame_instant;
         self.last_frame_instant = now;
 
+        self.frame_interval_average.submit_sample(interval);
+
         if let Some(config) = config.as_option() {
             let interval_ratio =
                 interval.as_secs_f32() / self.frame_interval_average.get_average().as_secs_f32();
 
-            self.frame_interval_average.submit_sample(interval);
 
             if interval_ratio > config.framerate_reset_threshold_multiplier
                 || interval_ratio < 1.0 / config.framerate_reset_threshold_multiplier
@@ -94,10 +95,6 @@ impl BitrateManager {
                 self.frame_interval_average.retain(5);
                 self.update_needed = true;
             }
-        } else {
-            //handle the case where setting is not on, framerate can still be useful
-            // to keep track of FPS for heuristic, although not doing the update_needed part
-            self.frame_interval_average.submit_sample(interval);
         }
     }
 
@@ -226,8 +223,8 @@ impl BitrateManager {
                 min_bitrate_mbps,
                 steps_mbps,
                 threshold_random_uniform,
-                update_interval_heuristic,
-                multiplier_RTT_threshold,
+                multiplier_rtt_threshold,
+                ..
             } => {
                 //define generator and sample from uniform dist. for heuristic
                 let mut rng = thread_rng();
@@ -254,7 +251,7 @@ impl BitrateManager {
 
                 let initial_bitrate = self.last_target_bitrate;
                 let mut bitrate_bps: f32 = initial_bitrate;
-                if let Switch::Enabled(RTT_threshold_mult) = *multiplier_RTT_threshold {
+                if let Switch::Enabled(rtt_threshold_mult) = *multiplier_rtt_threshold {
                     if let Switch::Enabled(threshold) = threshold_random_uniform {
                         if let Switch::Enabled(steps) = steps_mbps {
                             let frame_interval = self.frame_interval_average.get_average();
@@ -264,7 +261,7 @@ impl BitrateManager {
 
                             if (1. / self.frame_interarrival_avg) >= 0.95 * framerate {
                                 if self.alt_network_latency_window.get_average().as_secs_f32()
-                                    > frame_interval.as_secs_f32() * RTT_threshold_mult
+                                    > frame_interval.as_secs_f32() * rtt_threshold_mult
                                 {
                                     if random_prob >= *threshold {
                                         bitrate_bps = bitrate_bps - steps_bps; // decrease bitrate by 1 step
@@ -299,7 +296,7 @@ impl BitrateManager {
                 min_bitrate_mbps,
                 max_network_latency_ms,
                 encoder_latency_limiter,
-                decoder_latency_limiter,
+                ..
             } => {
                 let initial_bitrate_average_bps = self.bitrate_average.get_average();
                 // let initial_bitrate_average_bps = self.last_target_bitrate;

@@ -1,4 +1,5 @@
 mod average;
+mod timely;
 mod connection_result;
 mod inputs;
 mod logging;
@@ -18,6 +19,7 @@ pub use semver;
 pub use settings_schema;
 
 pub use average::*;
+pub use timely::*;
 pub use connection_result::*;
 pub use inputs::*;
 pub use log::{debug, error, info, warn};
