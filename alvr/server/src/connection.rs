@@ -1045,7 +1045,12 @@ fn connection_pipeline(
                                 rtt_network_alt = Duration::ZERO;
                                 // warn!("ZERO??");
                             }
-                            BITRATE_MANAGER.lock().report_network_rtt(rtt_network_alt);
+                            let heur_stats = BITRATE_MANAGER.lock().report_network_rtt(rtt_network_alt);
+                            
+                            BITRATE_MANAGER.lock().report_heuristic_event(heur_stats); 
+
+
+
 
                             stats.report_network_statistics(network_stats, rtt_network_alt);
                         }

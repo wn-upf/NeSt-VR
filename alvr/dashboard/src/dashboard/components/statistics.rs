@@ -14,7 +14,8 @@ use std::{collections::VecDeque, ops::RangeInclusive};
 
 const GRAPH_HISTORY_SIZE: usize = 1000;
 const UPPER_QUANTILE: f64 = 0.80;
-// const MIDDLE_QUANTILE: f64 = 0.4;
+// const LOWER_QUANTILE: f64 = 0.2;
+// const MIDDLE_QUANTILE: f64 = 0.5;
 fn draw_lines(painter: &Painter, points: Vec<Pos2>, color: Color32) {
     painter.add(Shape::line(points, Stroke::new(1.0, color)));
 }
@@ -304,14 +305,19 @@ impl StatisticsTab {
             ui,
             available_width,
             "Shards Jitter Graph",
-            0.0..=(data.quantile(UPPER_QUANTILE) * 5.0) as f32,
+            -5.0..=(data.quantile(UPPER_QUANTILE) * 5.0) as f32,
             |painter, to_screen_trans| {
                 let mut interarrival_jitter = Vec::with_capacity(GRAPH_HISTORY_SIZE);
                 let mut ow_delay = Vec::with_capacity(GRAPH_HISTORY_SIZE);
-                let mut threshold_gcc = Vec::with_capacity(GRAPH_HISTORY_SIZE);
+                let mut filtered_ow_delay = Vec::with_capacity(GRAPH_HISTORY_SIZE);
+
+                // let mut threshold_gcc = Vec::with_capacity(GRAPH_HISTORY_SIZE);
 
                 for i in 0..GRAPH_HISTORY_SIZE {
                     let pointer_graphstatistics = &self.history_network[i];
+
+                    let value_fowd = pointer_graphstatistics.filtered_ow_delay_ms;
+                    filtered_ow_delay.push(to_screen_trans * pos2(i as f32, value_fowd));
 
                     let value_jitt = pointer_graphstatistics.interarrival_jitter_ms;
                     interarrival_jitter.push(to_screen_trans * pos2(i as f32, value_jitt));
@@ -319,12 +325,12 @@ impl StatisticsTab {
                     let value_owd = pointer_graphstatistics.ow_delay_ms;
                     ow_delay.push(to_screen_trans * pos2(i as f32, value_owd));
 
-                    let value_thr = pointer_graphstatistics.threshold_gcc;
-                    threshold_gcc.push(to_screen_trans * pos2(i as f32, value_thr));
+                    // let value_thr = pointer_graphstatistics.threshold_gcc;
+                    // threshold_gcc.push(to_screen_trans * pos2(i as f32, value_thr));
                 }
-                draw_lines(painter, ow_delay, Color32::BLUE);
-                draw_lines(painter, threshold_gcc, Color32::GOLD);
+                draw_lines(painter, filtered_ow_delay, Color32::LIGHT_YELLOW);
                 draw_lines(painter, interarrival_jitter, Color32::RED);
+                draw_lines(painter, ow_delay, Color32::BLUE);
             },
             |ui, stats| {
                 fn maybe_label(
@@ -339,22 +345,24 @@ impl StatisticsTab {
                 }
                 maybe_label(
                     ui,
+                    "Filtered OW Delay",
+                    Some(stats.filtered_ow_delay_ms),
+                    Color32::LIGHT_YELLOW,
+                );
+                maybe_label(
+                    ui,
                     "Shard Interarrival Jitter",
                     Some(stats.interarrival_jitter_ms),
                     Color32::RED,
                 );
-                maybe_label(
-                    ui,
-                    "Filtered OW Delay",
-                    Some(stats.ow_delay_ms),
-                    Color32::BLUE,
-                );
-                maybe_label(
-                    ui,
-                    "Threshold from GCC",
-                    Some(stats.threshold_gcc),
-                    Color32::GOLD,
-                );
+                maybe_label(ui, "OW Delay", Some(stats.ow_delay_ms), Color32::BLUE);
+
+                // maybe_label(
+                //     ui,
+                //     "Threshold from GCC",
+                //     Some(stats.threshold_gcc),
+                //     Color32::GOLD,
+                // );
             },
         )
     }
@@ -364,7 +372,7 @@ impl StatisticsTab {
             ui,
             available_width,
             "Frames Skipped, Shards Lost and Shards Duplicated Graph",
-            0.0..=20.0 as f32,
+            -20.0..=20.0 as f32,
             |painter, to_screen_trans| {
                 let mut frameskipped = Vec::with_capacity(GRAPH_HISTORY_SIZE);
                 let mut shardloss = Vec::with_capacity(GRAPH_HISTORY_SIZE);
@@ -500,7 +508,7 @@ impl StatisticsTab {
             ui,
             available_width,
             "Video Network Throughput",
-            0.0..=(data.quantile(UPPER_QUANTILE) * 2.) as f32 / 1e6,
+            0.0..=150.0 as f32,
             |painter, to_screen_trans| {
                 let mut network_throughput_bps: Vec<Pos2> = Vec::with_capacity(GRAPH_HISTORY_SIZE);
 
@@ -526,7 +534,7 @@ impl StatisticsTab {
                     color: Color32,
                 ) {
                     if let Some(value) = maybe_value_bps {
-                        ui.colored_label(color, &format!("{text}: {:.2} Mbps", value / 1e6));
+                        ui.colored_label(color, &format!("{text}: {:.4} Mbps", value / 1e6));
                     }
                 }
                 let graphstats = stats;

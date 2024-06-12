@@ -109,6 +109,21 @@ pub struct GraphNetworkStatistics {
     pub internal_state_gcc: StatesWebrtc,
 }
 
+#[derive(Serialize, Deserialize, Clone, Debug, Copy, Default)]
+pub struct HeuristicStats {
+    pub frame_interval: Duration,
+    pub framerate: f32,
+    pub steps_bps: f32,
+
+    pub fps_heur: f32,
+    pub rtt_avg_heur: f32,
+    pub random_prob: f32,
+
+    pub threshold_fps: f32,
+    pub threshold_rtt: f32,
+    pub threshold_u: f32,
+}
+
 #[derive(Serialize, Deserialize, Clone, Debug)]
 pub struct TrackingEvent {
     pub head_motion: Option<DeviceMotion>,
@@ -142,6 +157,7 @@ pub enum EventType {
     StatisticsSummary(StatisticsSummary),
     GraphStatistics(GraphStatistics),
     GraphNetworkStatistics(GraphNetworkStatistics),
+    HeuristicStats(HeuristicStats),
     Tracking(Box<TrackingEvent>),
     Buttons(Vec<ButtonEvent>),
     Haptics(HapticsEvent),
