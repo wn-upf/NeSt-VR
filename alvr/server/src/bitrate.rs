@@ -311,7 +311,7 @@ impl BitrateManager {
 
                                     requested_bitrate_bps: bitrate_bps,
                                 };
-                                warn!("Heuristic Stats reported:  {:?}", heur_stats);
+                                // warn!("Heuristic Stats reported:  {:?}", heur_stats);
                                 self.heur_stats = heur_stats.clone();
                             }
                         }

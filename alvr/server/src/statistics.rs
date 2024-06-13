@@ -350,6 +350,12 @@ impl StatisticsManager {
             0.0
         };
 
+        let instant_network_throughput_bps: f32 = if network_stats.frame_interarrival != 0.0 {
+            network_stats.rx_bytes as f32 * 8.0 / network_stats.frame_interarrival
+        } else {
+            0.0
+        };
+
         let mut shards_sent: usize = 0;
         let shards_lost: isize;
 
@@ -434,7 +440,9 @@ impl StatisticsManager {
 
             network_throughput_bps: self.client_bytes_moving.get_sum() * 8.
                 / self.client_bytes_moving.get_interval_buffer_sum(),
+                
             peak_network_throughput_bps: peak_network_throughput_bps,
+            instant_network_throughput_bps: instant_network_throughput_bps, 
 
             nominal_bitrate: self.last_nominal_bitrate_stats.clone(),
         }));

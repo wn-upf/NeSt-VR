@@ -100,8 +100,9 @@ pub struct GraphNetworkStatistics {
     pub network_throughput_bps: f32,
 
     pub peak_network_throughput_bps: f32,
-
+    pub instant_network_throughput_bps: f32, 
     pub nominal_bitrate: NominalBitrateStats,
+
 }
 
 #[derive(Serialize, Deserialize, Clone, Debug, Copy, Default)]
