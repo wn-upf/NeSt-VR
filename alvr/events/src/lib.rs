@@ -1,4 +1,4 @@
-use alvr_common::{info, DeviceMotion, LogEntry, Pose, StatesWebrtc};
+use alvr_common::{info, DeviceMotion, LogEntry, Pose};
 use alvr_packets::{AudioDevicesList, ButtonValue};
 use alvr_session::SessionConfig;
 use serde::{Deserialize, Serialize};
@@ -87,8 +87,7 @@ pub struct GraphNetworkStatistics {
     pub ow_delay_ms: f32,
     pub filtered_ow_delay_ms: f32,
 
-    pub rtt_alt_ms: f32,
-
+    pub rtt_ms: f32,
 
     pub frame_interarrival_ms: f32,
     pub frame_jitter_ms: f32,
@@ -101,27 +100,25 @@ pub struct GraphNetworkStatistics {
     pub network_throughput_bps: f32,
 
     pub peak_network_throughput_bps: f32,
-    pub ema_peak_throughput_bps: f32,
 
     pub nominal_bitrate: NominalBitrateStats,
-
-    pub threshold_gcc: f32,
-    pub internal_state_gcc: StatesWebrtc,
 }
 
 #[derive(Serialize, Deserialize, Clone, Debug, Copy, Default)]
 pub struct HeuristicStats {
-    pub frame_interval: Duration,
-    pub framerate: f32,
+    pub frame_interval_s: f32,
+    pub server_fps: f32,
     pub steps_bps: f32,
 
-    pub fps_heur: f32,
-    pub rtt_avg_heur: f32,
+    pub network_heur_fps: f32,
+    pub rtt_avg_heur_s: f32,
     pub random_prob: f32,
 
     pub threshold_fps: f32,
-    pub threshold_rtt: f32,
+    pub threshold_rtt_s: f32,
     pub threshold_u: f32,
+
+    pub requested_bitrate_bps: f32
 }
 
 #[derive(Serialize, Deserialize, Clone, Debug)]

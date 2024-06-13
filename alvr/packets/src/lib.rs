@@ -1,6 +1,6 @@
 use alvr_common::{
     glam::{UVec2, Vec2},
-    ConnectionState, DeviceMotion, Fov, LogEntry, LogSeverity, Pose, StatesWebrtc,
+    ConnectionState, DeviceMotion, Fov, LogEntry, LogSeverity, Pose,
 };
 use alvr_session::{CodecType, SessionConfig};
 use serde::{Deserialize, Serialize};
@@ -96,9 +96,6 @@ pub struct NetworkStatisticsPacket {
 
     pub highest_rx_frame_index: i32,
     pub highest_rx_shard_index: i32,
-
-    pub threshold_gcc: f32,
-    pub internal_state_gcc: StatesWebrtc,
 }
 
 #[derive(Serialize, Deserialize, Clone, Copy, Debug)]
@@ -234,7 +231,6 @@ pub struct ClientStatistics {
     pub total_pipeline_latency: Duration,
 
     pub frames_dropped: u32,
-    pub duration_decoder_full: Duration,
 }
 
 #[derive(Serialize, Deserialize, Clone, Debug)]

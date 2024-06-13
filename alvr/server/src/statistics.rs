@@ -111,9 +111,6 @@ pub struct StatisticsManager {
     prev_highest_shard: i32,
     prev_highest_frame: i32,
 
-    ema_peak_throughput_bps: f32,
-    last_peak_t_measure: Instant,
-
     stats_history_buffer: VecDeque<HistoryFrame>,
     map_frames_spf: HashMap<u32, usize>,
 
@@ -196,9 +193,6 @@ impl StatisticsManager {
 
             prev_highest_shard: -1,
             prev_highest_frame: 0,
-
-            ema_peak_throughput_bps: 0.,
-            last_peak_t_measure: Instant::now(),
 
             stats_history_buffer: VecDeque::new(),
             map_frames_spf: HashMap::new(),
@@ -356,20 +350,6 @@ impl StatisticsManager {
             0.0
         };
 
-        let now = Instant::now();
-
-        if self.ema_peak_throughput_bps == 0. {
-            self.ema_peak_throughput_bps = peak_network_throughput_bps;
-        } else {
-            let delta_peak_t = now.duration_since(self.last_peak_t_measure);
-            let time_const = Duration::from_secs(5).as_secs_f32();
-
-            self.ema_peak_throughput_bps = delta_peak_t.as_secs_f32() / time_const
-                * peak_network_throughput_bps
-                + (1.0 - delta_peak_t.as_secs_f32() / time_const) * self.ema_peak_throughput_bps;
-        }
-        self.last_peak_t_measure = now;
-
         let mut shards_sent: usize = 0;
         let shards_lost: isize;
 
@@ -442,7 +422,7 @@ impl StatisticsManager {
             ow_delay_ms: network_stats.ow_delay * 1000.0,
             filtered_ow_delay_ms: network_stats.filtered_ow_delay * 1000.0,
 
-            rtt_alt_ms: rtt_alt.as_secs_f32() * 1000.0,
+            rtt_ms: rtt_alt.as_secs_f32() * 1000.0,
 
             frame_interarrival_ms: network_stats.frame_interarrival * 1000.0,
             frame_jitter_ms: self.frame_interarrival_average.get_std() * 1000.0,
@@ -453,15 +433,10 @@ impl StatisticsManager {
             shards_duplicated: network_stats.duplicated_shard_counter,
 
             network_throughput_bps: self.client_bytes_moving.get_sum() * 8.
-                / 1e6
                 / self.client_bytes_moving.get_interval_buffer_sum(),
             peak_network_throughput_bps: peak_network_throughput_bps,
-            ema_peak_throughput_bps: self.ema_peak_throughput_bps,
 
             nominal_bitrate: self.last_nominal_bitrate_stats.clone(),
-
-            threshold_gcc: network_stats.threshold_gcc,
-            internal_state_gcc: network_stats.internal_state_gcc,
         }));
     }
 

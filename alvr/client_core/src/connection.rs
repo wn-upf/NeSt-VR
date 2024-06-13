@@ -330,9 +330,6 @@ fn connection_pipeline(
 
                             highest_rx_frame_index: data.get_highest_rx_frame_index(), // index of the highest video frame received during the interval between consecutive frames
                             highest_rx_shard_index: data.get_highest_rx_shard_index(), // index of the highest video shard received during the interval between consecutive frames
-
-                            internal_state_gcc: data.get_gcc_state(),
-                            threshold_gcc: data.get_adaptive_threshold(),
                         },
                     ))
                     .ok();

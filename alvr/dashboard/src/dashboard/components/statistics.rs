@@ -508,7 +508,7 @@ impl StatisticsTab {
             ui,
             available_width,
             "Video Network Throughput",
-            0.0..=150.0 as f32,
+            0.0..=(data.quantile(UPPER_QUANTILE) * 2.0) as f32 / 1e6,
             |painter, to_screen_trans| {
                 let mut network_throughput_bps: Vec<Pos2> = Vec::with_capacity(GRAPH_HISTORY_SIZE);
 
