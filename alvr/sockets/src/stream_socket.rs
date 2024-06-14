@@ -770,7 +770,7 @@ impl StreamSocket {
             _phantom: PhantomData,
             shards_count: 0,
             reference_time: Instant::now(),
-            sentframe_buffer: FrameTracker::new(10),
+            sentframe_buffer: FrameTracker::new(30),
         }
     }
 
