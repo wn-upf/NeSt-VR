@@ -35,6 +35,8 @@ use std::{
 };
 
 const Q_KALMAN: f32 = 10E-3;
+const MAXSIZE_FRAMETRACKER: usize = 256; // wasteful, but consistent with HistoryFrame
+
 pub struct KalmanFilter {
     ow_delay: f32,
     m_current: f32,
@@ -62,7 +64,7 @@ impl Default for KalmanFilter {
         KalmanFilter {
             ow_delay: 0.0,
             m_current: 0.0,
-            p_current: 0.0,
+            p_current: 0.1,
             noise_prev: 0.0,
             residual_z: 0.0,
             noise_estimation: 0.0,
@@ -166,7 +168,7 @@ impl<H> Buffer<H> {
 
 #[derive(Clone)]
 pub struct FrameTracker {
-    // just simple buffer that drops the older samples when more than 10 are inside,
+    // just simple buffer that drops the older samples when more than NUM_MAX are inside,
     // used to store Instant/frame_id pairs to be used to compute network RTT independently
     map: HashMap<u32, Instant>,
     queue: VecDeque<u32>,
@@ -770,7 +772,7 @@ impl StreamSocket {
             _phantom: PhantomData,
             shards_count: 0,
             reference_time: Instant::now(),
-            sentframe_buffer: FrameTracker::new(30),
+            sentframe_buffer: FrameTracker::new( MAXSIZE_FRAMETRACKER),  // wasteful, but consistent with HistoryFrame
         }
     }
 
@@ -1031,47 +1033,45 @@ impl StreamSocket {
                     all_bytes_in_frame_app = values.iter().map(|shard| shard.rx_bytes_app).sum();
 
                     // One way delay gradient
-                    {
-                        if let Some(first_shard_stats) = inner_map.get(&0) {
-                            if let Some(prev_frame_tx_r_instant) = self.prev_frame_tx_r_instant {
-                                self.kalman.ow_delay = frame_interarrival
-                                    - (first_shard_stats.tx_r_instant - prev_frame_tx_r_instant);
-                            }
-                            self.prev_frame_tx_r_instant = Some(first_shard_stats.tx_r_instant);
+                    
+                    if let Some(first_shard_stats) = inner_map.get(&0) {
+                        if let Some(prev_frame_tx_r_instant) = self.prev_frame_tx_r_instant {
+                            self.kalman.ow_delay = frame_interarrival
+                                - (first_shard_stats.tx_r_instant - prev_frame_tx_r_instant);
                         }
-                        // Kalman filter
-                        {
-                            self.kalman.k_gain = (self.kalman.p_prev + Q_KALMAN)
-                                / (self.kalman.p_prev + Q_KALMAN + self.kalman.noise_estimation);
+                        self.prev_frame_tx_r_instant = Some(first_shard_stats.tx_r_instant);
+                    
+                        self.kalman.k_gain = (self.kalman.p_prev + Q_KALMAN)
+                            / (self.kalman.p_prev + Q_KALMAN + self.kalman.noise_estimation);
 
-                            self.kalman.m_current = (1.0 - self.kalman.k_gain) * self.kalman.m_prev
-                                + self.kalman.k_gain * self.kalman.ow_delay;
+                        self.kalman.m_current = (1.0 - self.kalman.k_gain) * self.kalman.m_prev
+                            + self.kalman.k_gain * self.kalman.ow_delay;
 
-                            self.kalman.residual_z = self.kalman.ow_delay - self.kalman.m_prev;
+                        self.kalman.residual_z = self.kalman.ow_delay - self.kalman.m_prev;
 
-                            self.kalman.noise_estimation = (0.95 * self.kalman.noise_prev)
-                                + self.kalman.residual_z.powf(2.0) * 0.05;
+                        self.kalman.noise_estimation = (0.95 * self.kalman.noise_prev)
+                            + self.kalman.residual_z.powf(2.0) * 0.05;
 
-                            self.kalman.p_current =
-                                (1.0 - self.kalman.k_gain) * (self.kalman.p_prev + Q_KALMAN);
+                        self.kalman.p_current =
+                            (1.0 - self.kalman.k_gain) * (self.kalman.p_prev + Q_KALMAN);
 
-                            self.kalman.p_prev = self.kalman.p_current;
-                            self.kalman.m_prev = self.kalman.m_current;
-                            self.kalman.noise_prev = self.kalman.noise_estimation;
+                        self.kalman.p_prev = self.kalman.p_current;
+                        self.kalman.m_prev = self.kalman.m_current;
+                        self.kalman.noise_prev = self.kalman.noise_estimation;
 
-                            self.kalman.measured_delay += self.kalman.m_current;
+                        self.kalman.measured_delay += self.kalman.m_current;
 
-                            self.kalman.adaptive_threshold = self.kalman.adaptive_threshold_prev
-                                + frame_interarrival
-                                    * self.kalman.k_threshold()
-                                    * (f32::abs(self.kalman.m_current)
-                                        - self.kalman.adaptive_threshold_prev);
+                        self.kalman.adaptive_threshold = self.kalman.adaptive_threshold_prev
+                            + frame_interarrival
+                                * self.kalman.k_threshold()
+                                * (f32::abs(self.kalman.m_current)
+                                    - self.kalman.adaptive_threshold_prev);
 
-                            self.kalman.adaptive_threshold_prev = self.kalman.adaptive_threshold;
+                        self.kalman.adaptive_threshold_prev = self.kalman.adaptive_threshold;
 
-                            self.kalman.state_gcc(); // change state of internal state machine. TODO: Add Delay-based controller logic
-                        }
+                        // self.kalman.state_gcc(); // change state of internal state machine. TODO: Add Delay-based controller logic
                     }
+                    
                 }
             }
 
@@ -1119,8 +1119,7 @@ impl StreamSocket {
                 // Keep only shards data from the latest packets (using wrapping logic)
                 let mut idxs_to_remove = Vec::new();
                 for &idx in self.map_rx.keys() {
-                    if wrapping_cmp(idx.wrapping_add(5), shard_recv_state_mut.packet_index)
-                        == Ordering::Less
+                    if wrapping_cmp(idx.wrapping_add(5), shard_recv_state_mut.packet_index) == Ordering::Less
                     {
                         idxs_to_remove.push(idx);
                     }
