@@ -34,7 +34,7 @@ use std::{
     time::{Duration, Instant},
 };
 
-const Q_KALMAN: f32 = 10E-3;
+const Q_KALMAN: f32 = 10E-8;
 const MAXSIZE_FRAMETRACKER: usize = 256; // wasteful, but consistent with HistoryFrame
 
 pub struct KalmanFilter {
@@ -772,7 +772,7 @@ impl StreamSocket {
             _phantom: PhantomData,
             shards_count: 0,
             reference_time: Instant::now(),
-            sentframe_buffer: FrameTracker::new( MAXSIZE_FRAMETRACKER),  // wasteful, but consistent with HistoryFrame
+            sentframe_buffer: FrameTracker::new(MAXSIZE_FRAMETRACKER), // wasteful, but consistent with HistoryFrame
         }
     }
 
@@ -1033,14 +1033,14 @@ impl StreamSocket {
                     all_bytes_in_frame_app = values.iter().map(|shard| shard.rx_bytes_app).sum();
 
                     // One way delay gradient
-                    
+
                     if let Some(first_shard_stats) = inner_map.get(&0) {
                         if let Some(prev_frame_tx_r_instant) = self.prev_frame_tx_r_instant {
                             self.kalman.ow_delay = frame_interarrival
                                 - (first_shard_stats.tx_r_instant - prev_frame_tx_r_instant);
                         }
                         self.prev_frame_tx_r_instant = Some(first_shard_stats.tx_r_instant);
-                    
+
                         self.kalman.k_gain = (self.kalman.p_prev + Q_KALMAN)
                             / (self.kalman.p_prev + Q_KALMAN + self.kalman.noise_estimation);
 
@@ -1071,7 +1071,6 @@ impl StreamSocket {
 
                         // self.kalman.state_gcc(); // change state of internal state machine. TODO: Add Delay-based controller logic
                     }
-                    
                 }
             }
 
@@ -1119,7 +1118,8 @@ impl StreamSocket {
                 // Keep only shards data from the latest packets (using wrapping logic)
                 let mut idxs_to_remove = Vec::new();
                 for &idx in self.map_rx.keys() {
-                    if wrapping_cmp(idx.wrapping_add(5), shard_recv_state_mut.packet_index) == Ordering::Less
+                    if wrapping_cmp(idx.wrapping_add(5), shard_recv_state_mut.packet_index)
+                        == Ordering::Less
                     {
                         idxs_to_remove.push(idx);
                     }

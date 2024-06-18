@@ -1,4 +1,4 @@
-use alvr_common::{SlidingWindowAverage, SlidingWindowTimely, HEAD_ID};
+use alvr_common::{SlidingWindowAverage, SlidingWindowTimely, SlidingWindowWeighted, HEAD_ID};
 use alvr_events::{
     EventType, GraphNetworkStatistics, GraphStatistics, NominalBitrateStats, StatisticsSummary,
 };
@@ -103,10 +103,12 @@ pub struct StatisticsManager {
 
     frame_interarrival_average: SlidingWindowAverage<f32>,
 
-    client_bytes_moving: SlidingWindowTimely<f32>,
-
     server_frames_moving: SlidingWindowTimely<f32>,
     client_frames_moving: SlidingWindowTimely<f32>,
+
+    history_throughput_weighted: SlidingWindowWeighted<f32>,
+    interval_avg_plot_throughput: f32,
+    instant_weighted_avg_prev: Instant,
 
     prev_highest_shard: i32,
     prev_highest_frame: i32,
@@ -186,10 +188,12 @@ impl StatisticsManager {
 
             frame_interarrival_average: SlidingWindowAverage::new(0., max_history_size),
 
-            client_bytes_moving: SlidingWindowTimely::new(0., 0., 1.),
-
             server_frames_moving: SlidingWindowTimely::new(60., 16., 1.),
             client_frames_moving: SlidingWindowTimely::new(60., 16., 1.),
+
+            history_throughput_weighted: SlidingWindowWeighted::new(0., 0.0),
+            instant_weighted_avg_prev: Instant::now(),
+            interval_avg_plot_throughput: 0. as f32,
 
             prev_highest_shard: -1,
             prev_highest_frame: 0,
@@ -332,11 +336,6 @@ impl StatisticsManager {
 
         self.frame_interarrival_partial_sum += network_stats.frame_interarrival;
 
-        self.client_bytes_moving.submit_sample(
-            network_stats.rx_bytes as f32,
-            network_stats.frame_interarrival,
-        );
-
         if !self.is_first_stats {
             self.frame_interarrival_average
                 .submit_sample(network_stats.frame_interarrival);
@@ -355,6 +354,11 @@ impl StatisticsManager {
         } else {
             0.0
         };
+
+        self.history_throughput_weighted.submit_sample(
+            instant_network_throughput_bps,
+            network_stats.frame_interarrival,
+        );
 
         let mut shards_sent: usize = 0;
         let shards_lost: isize;
@@ -406,6 +410,11 @@ impl StatisticsManager {
             self.map_frames_spf.remove_entry(&key);
         }
 
+        if Instant::now().duration_since(self.instant_weighted_avg_prev) >= Duration::from_secs(1) {
+            self.instant_weighted_avg_prev = Instant::now();
+            self.interval_avg_plot_throughput = self.history_throughput_weighted.get_average();
+        }
+
         alvr_events::send_event(EventType::GraphNetworkStatistics(GraphNetworkStatistics {
             frame_index: network_stats.frame_index as u32,
 
@@ -438,13 +447,12 @@ impl StatisticsManager {
             shards_lost: shards_lost,
             shards_duplicated: network_stats.duplicated_shard_counter,
 
-            network_throughput_bps: self.client_bytes_moving.get_sum() * 8.
-                / self.client_bytes_moving.get_interval_buffer_sum(),
-                
+            instant_network_throughput_bps: instant_network_throughput_bps,
             peak_network_throughput_bps: peak_network_throughput_bps,
-            instant_network_throughput_bps: instant_network_throughput_bps, 
 
             nominal_bitrate: self.last_nominal_bitrate_stats.clone(),
+
+            interval_avg_plot_throughput: self.interval_avg_plot_throughput,
         }));
     }
 

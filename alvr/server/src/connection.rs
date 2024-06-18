@@ -1027,6 +1027,8 @@ fn connection_pipeline(
 
                     ClientControlPacket::NetworkStatistics(network_stats) => {
                         if let Some(stats) = &mut *STATISTICS_MANAGER.lock() {
+                            let now = Instant::now();
+
                             let map_rtt_lock = map_clone.read().unwrap();
 
                             let mut hashmap = map_rtt_lock.clone();
@@ -1036,7 +1038,6 @@ fn connection_pipeline(
                             //     warn!("Key: {}, Value: {:?}", key, value);
                             // }
 
-                            let now = Instant::now();
                             let frame_id = network_stats.frame_index as u32;
                             let rtt_network_alt: Duration;
                             if let Some(send_instant) = hashmap.remove(&frame_id) {
@@ -1045,12 +1046,9 @@ fn connection_pipeline(
                                 rtt_network_alt = Duration::ZERO;
                                 // warn!("ZERO??");
                             }
-                            let heur_stats = BITRATE_MANAGER.lock().report_network_rtt(rtt_network_alt);
-                            
-                            BITRATE_MANAGER.lock().report_heuristic_event(heur_stats); 
-
-
-
+                            let heur_stats =
+                                BITRATE_MANAGER.lock().report_network_rtt(rtt_network_alt);
+                            BITRATE_MANAGER.lock().report_heuristic_event(heur_stats);
 
                             stats.report_network_statistics(network_stats, rtt_network_alt);
                         }

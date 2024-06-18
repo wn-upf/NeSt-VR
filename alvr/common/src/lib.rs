@@ -1,10 +1,11 @@
 mod average;
-mod timely;
 mod connection_result;
 mod inputs;
 mod logging;
 mod primitives;
+mod timely;
 mod version;
+mod weighted;
 
 use once_cell::sync::Lazy;
 use parking_lot::{Condvar, Mutex, RwLockWriteGuard};
@@ -19,13 +20,14 @@ pub use semver;
 pub use settings_schema;
 
 pub use average::*;
-pub use timely::*;
 pub use connection_result::*;
 pub use inputs::*;
 pub use log::{debug, error, info, warn};
 pub use logging::*;
 pub use primitives::*;
+pub use timely::*;
 pub use version::*;
+pub use weighted::*;
 
 pub const ALVR_NAME: &str = "ALVR";
 

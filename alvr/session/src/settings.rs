@@ -328,7 +328,6 @@ pub enum BitrateMode {
         #[schema(gui(slider(min = 0.1, max = 5.0, logarithmic)))]
         multiplier_rtt_threshold: Switch<f32>,
 
-
         #[schema(strings(display_name = "Threshold of 1/FPS in heuristic"))]
         #[schema(flag = "real-time")]
         #[schema(gui(slider(min = 0.1, max = 2.0, logarithmic)))]

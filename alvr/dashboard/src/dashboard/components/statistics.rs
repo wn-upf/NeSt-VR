@@ -501,7 +501,7 @@ impl StatisticsTab {
         let mut data = statistics::Data::new(
             self.history_network
                 .iter()
-                .map(|stats| stats.network_throughput_bps as f64)
+                .map(|stats| stats.interval_avg_plot_throughput as f64)
                 .collect::<Vec<_>>(),
         );
         self.draw_network_graph(
@@ -518,7 +518,7 @@ impl StatisticsTab {
                     let pointer_graphstatistics = &self.history_network[i];
                     let nom_br = &self.history_network[i].nominal_bitrate;
 
-                    let value_nw = pointer_graphstatistics.network_throughput_bps;
+                    let value_nw = pointer_graphstatistics.interval_avg_plot_throughput;
                     network_throughput_bps.push(to_screen_trans * pos2(i as f32, value_nw / 1e6));
 
                     requested.push(to_screen_trans * pos2(i as f32, nom_br.requested_bps / 1e6));
@@ -543,7 +543,7 @@ impl StatisticsTab {
                 maybe_label(
                     ui,
                     "Network Throughput",
-                    Some(graphstats.network_throughput_bps),
+                    Some(graphstats.interval_avg_plot_throughput),
                     Color32::BLUE,
                 );
                 maybe_label(

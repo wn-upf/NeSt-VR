@@ -68,7 +68,6 @@ pub struct GraphStatistics {
 
     //pub client_fps: f32,
     //pub server_fps: f32,
-
     pub nominal_bitrate: NominalBitrateStats,
     pub actual_bitrate_bps: f32,
 }
@@ -83,7 +82,7 @@ pub struct GraphNetworkStatistics {
     pub frame_span_ms: f32,
 
     pub interarrival_jitter_ms: f32,
-    
+
     pub ow_delay_ms: f32,
     pub filtered_ow_delay_ms: f32,
 
@@ -97,12 +96,12 @@ pub struct GraphNetworkStatistics {
     pub shards_lost: isize,
     pub shards_duplicated: u32,
 
-    pub network_throughput_bps: f32,
-
+    pub instant_network_throughput_bps: f32,
     pub peak_network_throughput_bps: f32,
-    pub instant_network_throughput_bps: f32, 
+
     pub nominal_bitrate: NominalBitrateStats,
 
+    pub interval_avg_plot_throughput: f32,
 }
 
 #[derive(Serialize, Deserialize, Clone, Debug, Copy, Default)]
@@ -119,7 +118,7 @@ pub struct HeuristicStats {
     pub threshold_rtt_s: f32,
     pub threshold_u: f32,
 
-    pub requested_bitrate_bps: f32
+    pub requested_bitrate_bps: f32,
 }
 
 #[derive(Serialize, Deserialize, Clone, Debug)]
