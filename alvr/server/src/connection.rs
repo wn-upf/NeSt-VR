@@ -1046,8 +1046,16 @@ fn connection_pipeline(
                                 rtt_network_alt = Duration::ZERO;
                                 // warn!("ZERO??");
                             }
+
+                            let peak_network_throughput_bps: f32 = if network_stats.frame_span != 0.0 {  // doing it here too since needs to be reported to BitrateManager 
+                                network_stats.bytes_in_frame as f32 * 8.0 / network_stats.frame_span
+                            } else {
+                                0.0
+                            };
+
+
                             let heur_stats =
-                                BITRATE_MANAGER.lock().report_network_rtt(rtt_network_alt);
+                                BITRATE_MANAGER.lock().report_network_rtt(rtt_network_alt, peak_network_throughput_bps);
                             BITRATE_MANAGER.lock().report_heuristic_event(heur_stats);
 
                             stats.report_network_statistics(network_stats, rtt_network_alt);
