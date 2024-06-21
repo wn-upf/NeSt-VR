@@ -240,6 +240,11 @@ impl BitrateManager {
                 fps_threshold_multiplier,
                 ..
             } => {
+
+                fn round_down_to_nearest_multiple(value: f32, step: f32) -> f32 {
+                    (value / step).floor() * step
+                }
+
                 //define generator and sample from uniform dist. for heuristic
                 let mut rng = thread_rng();
                 let uniform_dist = Uniform::new(0.0, 1.0);
@@ -305,7 +310,12 @@ impl BitrateManager {
                                 bitrate_bps =
                                     minmax_bitrate(bitrate_bps, max_bitrate_mbps, min_bitrate_mbps);
                                 
-                                bitrate_bps = f32::min(bitrate_bps, 0.9 * capacity_estimation_peak); // Make sure that we're under the capacity estimation's limit
+                                let limit = 0.9 * capacity_estimation_peak;
+                                if capacity_estimation_peak <= 100E6 {
+                                    bitrate_bps = round_down_to_nearest_multiple(f32::min(bitrate_bps, limit), steps_bps); // Make sure that we're under the capacity estimation's limit and in a step
+                                }
+
+                                // bitrate_bps = f32::min(bitrate_bps, 0.9 * capacity_estimation_peak); // Make sure that we're under the capacity estimation's limit
                                 // Update heuristic stats
                                 let heur_stats = HeuristicStats {
                                     frame_interval_s: frame_interval.as_secs_f32(),
