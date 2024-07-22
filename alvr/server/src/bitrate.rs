@@ -32,14 +32,13 @@ pub struct BitrateManager {
 
     last_target_bitrate: f32,
 
-    frame_interarrival_avg: f32,
+    frame_interarrival_average: SlidingWindowAverage<f32>,
 
     rtt_average: SlidingWindowAverage<Duration>,
     update_interval_setting: Duration,
 
     heur_stats: HeuristicStats,
-    peak_throughput_average: SlidingWindowAverage<f32>, 
-
+    peak_throughput_average: SlidingWindowAverage<f32>,
     // last_random_prob_heuristic: f32,
 }
 impl BitrateManager {
@@ -69,14 +68,14 @@ impl BitrateManager {
 
             last_target_bitrate: 30_000_000.0,
 
-            frame_interarrival_avg: 0.011,
+            frame_interarrival_average: SlidingWindowAverage::new(0.011, max_history_size),
+
             rtt_average: SlidingWindowAverage::new(Duration::from_millis(5), max_history_size),
             update_interval_setting: UPDATE_INTERVAL,
             heur_stats: HeuristicStats {
                 ..Default::default()
             },
-            peak_throughput_average: SlidingWindowAverage::new(300E6, max_history_size), 
-
+            peak_throughput_average: SlidingWindowAverage::new(300E6, max_history_size),
         }
     }
 
@@ -119,9 +118,18 @@ impl BitrateManager {
     // decoder_latency is used to learn a suitable maximum bitrate bound to avoid decoder runaway
     // latency
 
-    pub fn report_network_rtt(&mut self, network_rtt: Duration, peak_throughput: f32) -> HeuristicStats {
+    pub fn report_network_stats(
+        &mut self,
+        network_rtt: Duration,
+        peak_throughput: f32,
+        frame_interarrival: f32,
+    ) -> HeuristicStats {
         self.rtt_average.submit_sample(network_rtt);
-        self.peak_throughput_average.submit_sample(peak_throughput); 
+
+        self.peak_throughput_average.submit_sample(peak_throughput);
+
+        self.frame_interarrival_average
+            .submit_sample(frame_interarrival);
 
         return self.heur_stats.clone();
     }
@@ -132,14 +140,10 @@ impl BitrateManager {
         timestamp: Duration,
         network_latency: Duration,
         decoder_latency: Duration,
-
-        frame_interarrival_avg: f32,
     ) {
         if network_latency.is_zero() {
             return;
         }
-        self.frame_interarrival_avg = frame_interarrival_avg;
-
         self.network_latency_average.submit_sample(network_latency);
 
         while let Some(&(timestamp_, size_bits)) = self.packet_sizes_bits_history.front() {
@@ -241,7 +245,6 @@ impl BitrateManager {
                 capacity_multiplier,
                 ..
             } => {
-
                 fn round_down_to_nearest_multiple(value: f32, step: f32) -> f32 {
                     (value / step).floor() * step
                 }
@@ -249,8 +252,6 @@ impl BitrateManager {
                 //define generator and sample from uniform dist. for heuristic
                 let mut rng = thread_rng();
                 let uniform_dist = Uniform::new(0.0, 1.0);
-
-
 
                 fn minmax_bitrate(
                     bitrate_bps: f32,
@@ -275,12 +276,10 @@ impl BitrateManager {
                 let frame_interval = self.frame_interval_average.get_average();
                 let server_fps = 1.0 / frame_interval.as_secs_f32().min(1.0);
                 let rtt_avg_heur = self.rtt_average.get_average().as_secs_f32();
-                let fps_heur = 1.0 / self.frame_interarrival_avg;
+                let fps_heur = 1.0 / self.frame_interarrival_average.get_average();
                 let random_prob = rng.sample(uniform_dist);
 
-                let capacity_estimation_peak = self.peak_throughput_average.get_average(); 
-
-                
+                let capacity_estimation_peak = self.peak_throughput_average.get_average();
 
                 if let Switch::Enabled(rtt_threshold_mult) = *multiplier_rtt_threshold {
                     if let Switch::Enabled(threshold_u) = *threshold_random_uniform {
@@ -309,13 +308,18 @@ impl BitrateManager {
                                     }
 
                                     // Ensure bitrate is within allowed range
-                                    bitrate_bps =
-                                        minmax_bitrate(bitrate_bps, max_bitrate_mbps, min_bitrate_mbps);
-                                    
+                                    bitrate_bps = minmax_bitrate(
+                                        bitrate_bps,
+                                        max_bitrate_mbps,
+                                        min_bitrate_mbps,
+                                    );
+
                                     let limit = cap_mult * capacity_estimation_peak;
 
-                                    bitrate_bps = round_down_to_nearest_multiple(f32::min(bitrate_bps, limit), steps_bps); // Make sure that we're under the capacity estimation's limit and in a step
-                                    
+                                    bitrate_bps = round_down_to_nearest_multiple(
+                                        f32::min(bitrate_bps, limit),
+                                        steps_bps,
+                                    ); // Make sure that we're under the capacity estimation's limit and in a step
 
                                     // Update heuristic stats
                                     let heur_stats = HeuristicStats {

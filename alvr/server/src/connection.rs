@@ -919,7 +919,7 @@ fn connection_pipeline(
                 if let Some(stats) = &mut *STATISTICS_MANAGER.lock() {
                     let timestamp = client_stats.target_timestamp;
                     let decoder_latency = client_stats.video_decode;
-                    let (network_latency, frame_interarrival_avg) =
+                    let network_latency =
                         stats.report_statistics(client_stats);
 
                     let server_data_lock = SERVER_DATA_MANAGER.read();
@@ -927,8 +927,7 @@ fn connection_pipeline(
                         &server_data_lock.settings().video.bitrate.mode,
                         timestamp,
                         network_latency,
-                        decoder_latency,
-                        frame_interarrival_avg,
+                        decoder_latency
                     );
                 }
             }
@@ -1047,18 +1046,11 @@ fn connection_pipeline(
                                 // warn!("ZERO??");
                             }
 
-                            let peak_network_throughput_bps: f32 = if network_stats.frame_span != 0.0 {  // doing it here too since needs to be reported to BitrateManager 
-                                network_stats.bytes_in_frame as f32 * 8.0 / network_stats.frame_span
-                            } else {
-                                0.0
-                            };
-
+                            let (peak_network_throughput_bps, frame_interarrival) = stats.report_network_statistics(network_stats, rtt_network_alt);
 
                             let heur_stats =
-                                BITRATE_MANAGER.lock().report_network_rtt(rtt_network_alt, peak_network_throughput_bps);
+                                BITRATE_MANAGER.lock().report_network_stats(rtt_network_alt, peak_network_throughput_bps, frame_interarrival);
                             BITRATE_MANAGER.lock().report_heuristic_event(heur_stats);
-
-                            stats.report_network_statistics(network_stats, rtt_network_alt);
                         }
                     }
 

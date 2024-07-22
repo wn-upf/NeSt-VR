@@ -328,7 +328,7 @@ impl StatisticsManager {
         &mut self,
         network_stats: NetworkStatisticsPacket,
         rtt_alt: Duration,
-    ) {
+    ) -> (f32, f32) {
         self.packets_skipped_total += network_stats.frames_skipped as usize;
         self.packets_skipped_partial_sum += network_stats.frames_skipped as usize;
 
@@ -336,11 +336,13 @@ impl StatisticsManager {
 
         self.frame_interarrival_partial_sum += network_stats.frame_interarrival;
 
+        let mut frame_interarrival = network_stats.frame_interarrival;
         if !self.is_first_stats {
             self.frame_interarrival_average
-                .submit_sample(network_stats.frame_interarrival);
+                .submit_sample(frame_interarrival);
         } else {
-            self.is_first_stats = false
+            frame_interarrival = 0.011;
+            self.is_first_stats = false;
         }
 
         let peak_network_throughput_bps: f32 = if network_stats.frame_span != 0.0 {
@@ -454,6 +456,8 @@ impl StatisticsManager {
 
             interval_avg_plot_throughput: self.interval_avg_plot_throughput,
         }));
+
+        return (peak_network_throughput_bps, frame_interarrival);
     }
 
     pub fn report_statistics_summary(&mut self) {
@@ -559,7 +563,7 @@ impl StatisticsManager {
 
     // This statistics are reported for every succesfully displayed frame
     // Returns network latency, frame interarrival average
-    pub fn report_statistics(&mut self, client_stats: ClientStatistics) -> (Duration, f32) {
+    pub fn report_statistics(&mut self, client_stats: ClientStatistics) -> Duration {
         if let Some(frame) = self
             .stats_history_buffer
             .iter_mut()
@@ -665,12 +669,9 @@ impl StatisticsManager {
 
             self.report_statistics_summary();
 
-            return (
-                network_latency,
-                self.frame_interarrival_average.get_average(),
-            );
+            return network_latency;
         } else {
-            (Duration::ZERO, 0.0)
+            Duration::ZERO
         }
     }
 
