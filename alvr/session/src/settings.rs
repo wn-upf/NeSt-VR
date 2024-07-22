@@ -328,6 +328,11 @@ pub enum BitrateMode {
         #[schema(gui(slider(min = 0.1, max = 5.0, logarithmic)))]
         multiplier_rtt_threshold: Switch<f32>,
 
+        #[schema(strings(display_name = "Estimated Capacity Scaling Factor"))]
+        #[schema(flag = "real-time")]
+        #[schema(gui(slider(min = 0.0, max = 1.0, logarithmic)))]
+        capacity_multiplier: Switch<f32>,
+
         #[schema(strings(display_name = "Threshold of 1/FPS in heuristic"))]
         #[schema(flag = "real-time")]
         #[schema(gui(slider(min = 0.1, max = 2.0, logarithmic)))]
@@ -1269,6 +1274,10 @@ pub fn session_settings_default() -> SettingsDefault {
                         fps_threshold_multiplier: SwitchDefault {
                             enabled: true,
                             content: 0.95,
+                        },
+                        capacity_multiplier: SwitchDefault {
+                            enabled: true,
+                            content: 0.9,
                         },
                     },
                     variant: BitrateModeDefaultVariant::SimpleHeuristic,
