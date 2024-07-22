@@ -310,10 +310,9 @@ impl BitrateManager {
                                 bitrate_bps =
                                     minmax_bitrate(bitrate_bps, max_bitrate_mbps, min_bitrate_mbps);
                                 
-                                let limit = 0.9 * capacity_estimation_peak;
-                                if capacity_estimation_peak <= 100E6 {
-                                    bitrate_bps = round_down_to_nearest_multiple(f32::min(bitrate_bps, limit), steps_bps); // Make sure that we're under the capacity estimation's limit and in a step
-                                }
+                                let limit = 0.9 * capacity_estimation_peak; //120, 0.9*80 = 
+                                bitrate_bps = round_down_to_nearest_multiple(f32::min(bitrate_bps, limit), steps_bps); // Make sure that we're under the capacity estimation's limit and in a step
+                                
 
                                 // bitrate_bps = f32::min(bitrate_bps, 0.9 * capacity_estimation_peak); // Make sure that we're under the capacity estimation's limit
                                 // Update heuristic stats
