@@ -18,8 +18,7 @@
 
 use crate::backend::{tcp, udp, SocketReader, SocketWriter};
 use alvr_common::{
-    anyhow::Result, debug, parking_lot::Mutex, AnyhowToCon, ConResult, HandleTryAgain,
-    StatesWebrtc, ToCon,
+    anyhow::Result, debug, parking_lot::Mutex, AnyhowToCon, ConResult, HandleTryAgain, ToCon,
 };
 use alvr_packets::VIDEO;
 use alvr_session::{DscpTos, SocketBufferSize, SocketProtocol};
@@ -35,7 +34,6 @@ use std::{
 };
 
 const Q_KALMAN: f32 = 10E-8;
-const MAXSIZE_FRAMETRACKER: usize = 256; // wasteful, but consistent with HistoryFrame
 
 pub struct KalmanFilter {
     ow_delay: f32,
@@ -48,15 +46,6 @@ pub struct KalmanFilter {
     p_prev: f32,
     k_gain: f32,
     measured_delay: f32,
-
-    adaptive_threshold: f32,
-    adaptive_threshold_prev: f32,
-
-    k_threshold_u: f32,
-    k_threshold_d: f32,
-
-    state: StatesWebrtc,
-    last_not_overuse_instant: Instant,
 }
 
 impl Default for KalmanFilter {
@@ -72,43 +61,6 @@ impl Default for KalmanFilter {
             p_prev: 0.0,
             k_gain: 0.0,
             measured_delay: 0.0,
-
-            adaptive_threshold: 0.0,
-            adaptive_threshold_prev: 0.0,
-
-            k_threshold_u: 0.01,
-            k_threshold_d: 0.00018,
-
-            state: StatesWebrtc::NORMAL,
-            last_not_overuse_instant: Instant::now(),
-        }
-    }
-}
-
-impl KalmanFilter {
-    fn k_threshold(&self) -> f32 {
-        if f32::abs(self.m_current) < self.adaptive_threshold_prev {
-            self.k_threshold_d
-        } else {
-            self.k_threshold_u
-        }
-    }
-    fn state_gcc(&mut self) {
-        if self.m_current > self.adaptive_threshold {
-            let time_since_not_overuse =
-                Instant::now().duration_since(self.last_not_overuse_instant);
-
-            if time_since_not_overuse > Duration::from_millis(100) {
-                self.state = StatesWebrtc::OVERUSE;
-            }
-        } else if self.m_current < (-self.adaptive_threshold) {
-            self.state = StatesWebrtc::UNDERUSE;
-            self.last_not_overuse_instant = Instant::now()
-        } else if self.m_current >= -self.adaptive_threshold
-            && self.m_current <= self.adaptive_threshold
-        {
-            self.state = StatesWebrtc::NORMAL;
-            self.last_not_overuse_instant = Instant::now()
         }
     }
 }
@@ -168,19 +120,18 @@ impl<H> Buffer<H> {
 
 #[derive(Clone)]
 pub struct FrameTracker {
-    // just simple buffer that drops the older samples when more than NUM_MAX are inside,
-    // used to store Instant/frame_id pairs to be used to compute network RTT independently
+    // Struct to store frame index and transmission instant pairs
     map: HashMap<u32, Instant>,
     queue: VecDeque<u32>,
     max_size: usize,
 }
 
 impl FrameTracker {
-    fn new(max_size: usize) -> Self {
+    fn new() -> Self {
         FrameTracker {
             map: HashMap::new(),
             queue: VecDeque::new(),
-            max_size,
+            max_size: 256,
         }
     }
     fn insert(&mut self, frame_id: u32, instant: Instant) {
@@ -208,7 +159,8 @@ pub struct StreamSender<H> {
 
     shards_count: usize,
     reference_time: Instant,
-    sentframe_buffer: FrameTracker,
+
+    frame_tracker: FrameTracker,
 }
 
 impl<H> StreamSender<H> {
@@ -218,8 +170,8 @@ impl<H> StreamSender<H> {
     pub fn get_last_packet_id(&self) -> u32 {
         self.next_packet_index - 1
     }
-    pub fn get_hashmap_frame_buffer(&self) -> HashMap<u32, Instant> {
-        self.sentframe_buffer.map.clone()
+    pub fn get_frame_tracker_map(&self) -> HashMap<u32, Instant> {
+        self.frame_tracker.map.clone()
     }
 
     /// Shard and send a buffer with zero copies and zero allocations.
@@ -261,7 +213,7 @@ impl<H> StreamSender<H> {
 
             if idx == 0 {
                 //store next_packet_index - Instant value pair for RTT
-                self.sentframe_buffer
+                self.frame_tracker
                     .insert(self.next_packet_index, Instant::now())
             }
         }
@@ -327,9 +279,6 @@ pub struct ReceiverData<H> {
 
     highest_rx_frame_index: i32,
     highest_rx_shard_index: i32,
-
-    threshold_gcc: f32,
-    internal_state_gcc: StatesWebrtc,
 }
 
 impl<H> ReceiverData<H> {
@@ -379,12 +328,6 @@ impl<H> ReceiverData<H> {
     pub fn get_highest_rx_shard_index(&self) -> i32 {
         self.highest_rx_shard_index
     }
-    pub fn get_gcc_state(&self) -> StatesWebrtc {
-        self.internal_state_gcc
-    }
-    pub fn get_adaptive_threshold(&self) -> f32 {
-        self.threshold_gcc
-    }
 }
 
 impl<H: DeserializeOwned> ReceiverData<H> {
@@ -431,9 +374,6 @@ struct ReconstructedPacket {
 
     highest_rx_frame_index: i32,
     highest_rx_shard_index: i32,
-
-    threshold_gcc: f32,
-    internal_state_gcc: StatesWebrtc,
 }
 
 pub struct StreamReceiver<H> {
@@ -538,9 +478,6 @@ impl<H: DeserializeOwned + Serialize> StreamReceiver<H> {
 
             highest_rx_frame_index: packet.highest_rx_frame_index,
             highest_rx_shard_index: packet.highest_rx_shard_index,
-
-            threshold_gcc: packet.threshold_gcc,
-            internal_state_gcc: packet.internal_state_gcc,
         })
     }
 }
@@ -772,7 +709,7 @@ impl StreamSocket {
             _phantom: PhantomData,
             shards_count: 0,
             reference_time: Instant::now(),
-            sentframe_buffer: FrameTracker::new(MAXSIZE_FRAMETRACKER), // wasteful, but consistent with HistoryFrame
+            frame_tracker: FrameTracker::new(),
         }
     }
 
@@ -1033,7 +970,6 @@ impl StreamSocket {
                     all_bytes_in_frame_app = values.iter().map(|shard| shard.rx_bytes_app).sum();
 
                     // One way delay gradient
-
                     if let Some(first_shard_stats) = inner_map.get(&0) {
                         if let Some(prev_frame_tx_r_instant) = self.prev_frame_tx_r_instant {
                             self.kalman.ow_delay = frame_interarrival
@@ -1060,16 +996,6 @@ impl StreamSocket {
                         self.kalman.noise_prev = self.kalman.noise_estimation;
 
                         self.kalman.measured_delay += self.kalman.m_current;
-
-                        self.kalman.adaptive_threshold = self.kalman.adaptive_threshold_prev
-                            + frame_interarrival
-                                * self.kalman.k_threshold()
-                                * (f32::abs(self.kalman.m_current)
-                                    - self.kalman.adaptive_threshold_prev);
-
-                        self.kalman.adaptive_threshold_prev = self.kalman.adaptive_threshold;
-
-                        // self.kalman.state_gcc(); // change state of internal state machine. TODO: Add Delay-based controller logic
                     }
                 }
             }
@@ -1104,9 +1030,6 @@ impl StreamSocket {
 
                     highest_rx_frame_index: self.highest_rx_frame_index,
                     highest_rx_shard_index: self.highest_rx_shard_index,
-
-                    threshold_gcc: self.kalman.adaptive_threshold,
-                    internal_state_gcc: self.kalman.state,
                 })
                 .ok();
 

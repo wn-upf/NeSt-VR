@@ -327,7 +327,7 @@ impl StatisticsManager {
     pub fn report_network_statistics(
         &mut self,
         network_stats: NetworkStatisticsPacket,
-        rtt_alt: Duration,
+        rtt: Duration,
     ) -> (f32, f32) {
         self.packets_skipped_total += network_stats.frames_skipped as usize;
         self.packets_skipped_partial_sum += network_stats.frames_skipped as usize;
@@ -439,7 +439,7 @@ impl StatisticsManager {
             ow_delay_ms: network_stats.ow_delay * 1000.0,
             filtered_ow_delay_ms: network_stats.filtered_ow_delay * 1000.0,
 
-            rtt_ms: rtt_alt.as_secs_f32() * 1000.0,
+            rtt_ms: rtt.as_secs_f32() * 1000.0,
 
             frame_interarrival_ms: network_stats.frame_interarrival * 1000.0,
             frame_jitter_ms: self.frame_interarrival_average.get_std() * 1000.0,

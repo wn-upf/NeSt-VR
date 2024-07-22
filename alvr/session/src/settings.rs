@@ -299,11 +299,11 @@ pub enum BitrateMode {
         decoder_latency_limiter: Switch<DecoderLatencyLimiter>,
     },
     #[schema(collapsible)]
-    SimpleHeuristic {
+    NestVr {
         #[schema(strings(display_name = "Adjustment period (tau)"))]
         #[schema(flag = "real-time")]
         #[schema(gui(slider(min = 0.1, max = 10.0, logarithmic)), suffix = "s")]
-        update_interval_heuristic: f32,
+        update_interval_nestvr_s: f32,
 
         #[schema(strings(display_name = "Maximum bitrate (B_max)"))]
         #[schema(flag = "real-time")]
@@ -320,27 +320,27 @@ pub enum BitrateMode {
         #[schema(strings(display_name = "Step size (beta)"))]
         #[schema(flag = "real-time")]
         #[schema(gui(slider(min = 1.0, max = 100.0, logarithmic)), suffix = "Mbps")]
-        steps_mbps: f32,
+        step_size_mbps: f32,
 
         #[schema(strings(display_name = "Estimated capacity scaling factor (m)"))]
         #[schema(flag = "real-time")]
         #[schema(gui(slider(min = 0.0, max = 1.0, logarithmic)))]
-        capacity_multiplier: f32,
+        capacity_scaling_factor: f32,
 
         #[schema(strings(display_name = "VF-RTT exploration probability (gamma)"))]
         #[schema(flag = "real-time")]
         #[schema(gui(slider(min = 0.0, max = 1.0, logarithmic)))]
-        threshold_random_uniform: f32,
+        rtt_explor_prob: f32,
 
         #[schema(strings(display_name = "NFR threshold (rho)"))]
         #[schema(flag = "real-time")]
         #[schema(gui(slider(min = 0.1, max = 1.0, logarithmic)))]
-        fps_threshold_multiplier: f32,
+        nfr_thresh: f32,
 
         #[schema(strings(display_name = "VF-RTT threshold scaling factor (varsigma)"))]
         #[schema(flag = "real-time")]
         #[schema(gui(slider(min = 0.1, max = 5.0, logarithmic)))]
-        multiplier_rtt_threshold: f32,
+        rtt_thresh_scaling_factor: f32,
     },
 }
 
@@ -361,7 +361,10 @@ pub struct BitrateConfig {
     #[schema(flag = "real-time")]
     pub mode: BitrateMode,
 
-    #[schema(strings(display_name = "Sliding window size (n)", help = "Controls the smoothness during calculations"))]
+    #[schema(strings(
+        display_name = "Sliding window size (n)",
+        help = "Controls the smoothness during calculations"
+    ))]
     pub history_size: usize,
 
     #[schema(strings(
@@ -1248,10 +1251,10 @@ pub fn session_settings_default() -> SettingsDefault {
                             },
                         },
                     },
-                    SimpleHeuristic: BitrateModeSimpleHeuristicDefault {
+                    NestVr: BitrateModeNestVrDefault {
                         gui_collapsed: false,
 
-                        update_interval_heuristic: 1.0,
+                        update_interval_nestvr_s: 1.0,
 
                         max_bitrate_mbps: SwitchDefault {
                             enabled: true,
@@ -1263,17 +1266,17 @@ pub fn session_settings_default() -> SettingsDefault {
                         },
                         initial_bitrate_mbps: 30.0,
 
-                        steps_mbps: 10.0,
+                        step_size_mbps: 10.0,
 
-                        capacity_multiplier: 0.9,
+                        capacity_scaling_factor: 0.9,
 
-                        threshold_random_uniform: 0.25,
+                        rtt_explor_prob: 0.25,
 
-                        fps_threshold_multiplier: 0.95,
+                        nfr_thresh: 0.95,
 
-                        multiplier_rtt_threshold: 2.0,
+                        rtt_thresh_scaling_factor: 2.0,
                     },
-                    variant: BitrateModeDefaultVariant::SimpleHeuristic,
+                    variant: BitrateModeDefaultVariant::NestVr,
                 },
                 history_size: 256,
                 adapt_to_framerate: SwitchDefault {

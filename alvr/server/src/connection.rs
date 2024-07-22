@@ -537,7 +537,7 @@ fn connection_pipeline(
     let mut initial_bitrate = 30.0;
     let config_mode = &server_data_lock.settings().video.bitrate.mode;
 
-    if let BitrateMode::SimpleHeuristic {
+    if let BitrateMode::NestVr {
         initial_bitrate_mbps,
         ..
     } = &config_mode
@@ -573,7 +573,6 @@ fn connection_pipeline(
     *VIDEO_CHANNEL_SENDER.lock() = Some(video_channel_sender);
     *HAPTICS_SENDER.lock() = Some(haptics_sender);
 
-    // let mut frame_send_map_rtt: HashMap<u32, Instant> = HashMap::new(); //make higher level variable to clone HashMap
     let map: InstantMap = Arc::new(RwLock::new(HashMap::new()));
 
     let video_send_thread = thread::spawn({
@@ -595,12 +594,11 @@ fn connection_pipeline(
                     .copy_from_slice(&payload);
                 video_sender.send(buffer).ok();
 
-                // Copy the hashmap from sent frames into the map to later compute RTT
-                let cloned_socket_map = video_sender.get_hashmap_frame_buffer();
+                let cloned_socket_map = video_sender.get_frame_tracker_map();
 
                 match map_clone.write() {
                     Ok(mut guard) => {
-                        *guard = cloned_socket_map; // Update the guard with the new hashmap
+                        *guard = cloned_socket_map;
                     }
                     Err(_) => {
                         warn!("Failed to acquire write lock in RTT hashmap");
@@ -1042,30 +1040,24 @@ fn connection_pipeline(
                             let map_rtt_lock = map_clone.read().unwrap();
 
                             let mut hashmap = map_rtt_lock.clone();
-                            // warn!("Received NETWORK stats packet");                      // not deleting yet until completely tested
-                            // warn!("Hashmap KV pairs on RTT: \n");
-                            // for (key, value) in &hashmap {
-                            //     warn!("Key: {}, Value: {:?}", key, value);
-                            // }
 
                             let frame_id = network_stats.frame_index as u32;
-                            let rtt_network_alt: Duration;
+
+                            let rtt: Duration;
                             if let Some(send_instant) = hashmap.remove(&frame_id) {
-                                rtt_network_alt = now.saturating_duration_since(send_instant);
+                                rtt = now.saturating_duration_since(send_instant);
                             } else {
-                                rtt_network_alt = Duration::ZERO;
-                                // warn!("ZERO??");
+                                rtt = Duration::ZERO;
                             }
 
-                            let (peak_network_throughput_bps, frame_interarrival) =
-                                stats.report_network_statistics(network_stats, rtt_network_alt);
+                            let (peak_network_throughput_bps, frame_interarrival_s) =
+                                stats.report_network_statistics(network_stats, rtt);
 
-                            let heur_stats = BITRATE_MANAGER.lock().report_network_stats(
-                                rtt_network_alt,
+                            BITRATE_MANAGER.lock().report_network_statistics(
+                                rtt,
                                 peak_network_throughput_bps,
-                                frame_interarrival,
+                                frame_interarrival_s,
                             );
-                            BITRATE_MANAGER.lock().report_heuristic_event(heur_stats);
                         }
                     }
 
