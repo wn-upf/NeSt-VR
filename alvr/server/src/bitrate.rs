@@ -42,7 +42,8 @@ pub struct BitrateManager {
     // last_random_prob_heuristic: f32,
 }
 impl BitrateManager {
-    pub fn new(max_history_size: usize, initial_framerate: f32) -> Self {
+    pub fn new(max_history_size: usize, initial_framerate: f32, initial_bitrate: f32) -> Self {
+
         Self {
             nominal_frame_interval: Duration::from_secs_f32(1. / initial_framerate),
             frame_interval_average: SlidingWindowAverage::new(
@@ -58,7 +59,7 @@ impl BitrateManager {
                 Duration::from_millis(5),
                 max_history_size,
             ),
-            bitrate_average: SlidingWindowAverage::new(30_000_000.0, max_history_size),
+            bitrate_average: SlidingWindowAverage::new(initial_bitrate * 1e6, max_history_size),
             decoder_latency_overstep_count: 0,
             last_frame_instant: Instant::now(),
             last_update_instant: Instant::now(),
@@ -66,9 +67,9 @@ impl BitrateManager {
             previous_config: None,
             update_needed: true,
 
-            last_target_bitrate: 30_000_000.0,
+            last_target_bitrate: initial_bitrate * 1e6,
 
-            frame_interarrival_average: SlidingWindowAverage::new(0.011, max_history_size),
+            frame_interarrival_average: SlidingWindowAverage::new(1. / initial_framerate, max_history_size),
 
             rtt_average: SlidingWindowAverage::new(Duration::from_millis(5), max_history_size),
             update_interval_setting: UPDATE_INTERVAL,
@@ -197,11 +198,7 @@ impl BitrateManager {
             ..
         } = &config.mode
         {
-            if let Switch::Enabled(time_update) = update_interval_heuristic {
-                self.update_interval_setting = Duration::from_secs_f32(*time_update);
-            } else {
-                self.update_interval_setting = UPDATE_INTERVAL;
-            }
+            self.update_interval_setting = Duration::from_secs_f32(*update_interval_heuristic);
         } else {
             self.update_interval_setting = UPDATE_INTERVAL;
         }
@@ -239,10 +236,10 @@ impl BitrateManager {
                 max_bitrate_mbps,
                 min_bitrate_mbps,
                 steps_mbps,
-                threshold_random_uniform,
-                multiplier_rtt_threshold,
-                fps_threshold_multiplier,
                 capacity_multiplier,
+                threshold_random_uniform,
+                fps_threshold_multiplier,
+                multiplier_rtt_threshold,
                 ..
             } => {
                 fn round_down_to_nearest_multiple(value: f32, step: f32) -> f32 {
@@ -281,69 +278,59 @@ impl BitrateManager {
 
                 let capacity_estimation_peak = self.peak_throughput_average.get_average();
 
-                if let Switch::Enabled(rtt_threshold_mult) = *multiplier_rtt_threshold {
-                    if let Switch::Enabled(threshold_u) = *threshold_random_uniform {
-                        if let Switch::Enabled(cap_mult) = *capacity_multiplier {
-                            if let Switch::Enabled(steps) = *steps_mbps {
-                                if let Switch::Enabled(fps_mult) = *fps_threshold_multiplier {
-                                    let steps_bps = steps * 1E6;
+                let steps_bps = *steps_mbps * 1E6;
 
-                                    // Calculate thresholds
-                                    let threshold_fps = fps_mult * server_fps;
-                                    let threshold_rtt =
-                                        frame_interval.as_secs_f32() * rtt_threshold_mult;
+                // Calculate thresholds
+                let threshold_fps = *fps_threshold_multiplier * server_fps;
+                let threshold_rtt =
+                    frame_interval.as_secs_f32() * *multiplier_rtt_threshold;
 
-                                    if fps_heur >= threshold_fps {
-                                        if rtt_avg_heur > threshold_rtt {
-                                            if random_prob >= threshold_u {
-                                                bitrate_bps -= steps_bps; // decrease bitrate by 1 step
-                                            }
-                                        } else {
-                                            if random_prob <= threshold_u {
-                                                bitrate_bps += steps_bps; // increase bitrate by 1 step
-                                            }
-                                        }
-                                    } else {
-                                        bitrate_bps -= steps_bps; // decrease bitrate by 1 step
-                                    }
-
-                                    // Ensure bitrate is within allowed range
-                                    bitrate_bps = minmax_bitrate(
-                                        bitrate_bps,
-                                        max_bitrate_mbps,
-                                        min_bitrate_mbps,
-                                    );
-
-                                    let limit = cap_mult * capacity_estimation_peak;
-
-                                    bitrate_bps = round_down_to_nearest_multiple(
-                                        f32::min(bitrate_bps, limit),
-                                        steps_bps,
-                                    ); // Make sure that we're under the capacity estimation's limit and in a step
-
-                                    // Update heuristic stats
-                                    let heur_stats = HeuristicStats {
-                                        frame_interval_s: frame_interval.as_secs_f32(),
-                                        server_fps: server_fps,
-                                        steps_bps: steps_bps,
-
-                                        network_heur_fps: fps_heur,
-                                        rtt_avg_heur_s: rtt_avg_heur,
-                                        random_prob: random_prob,
-
-                                        threshold_fps: threshold_fps,
-                                        threshold_rtt_s: threshold_rtt,
-                                        threshold_u: threshold_u,
-
-                                        requested_bitrate_bps: bitrate_bps,
-                                    };
-                                    // warn!("Heuristic Stats reported:  {:?}", heur_stats);
-                                    self.heur_stats = heur_stats.clone();
-                                }
-                            }
+                if fps_heur >= threshold_fps {
+                    if rtt_avg_heur > threshold_rtt {
+                        if random_prob >= *threshold_random_uniform {
+                            bitrate_bps -= steps_bps; // decrease bitrate by 1 step
+                        }
+                    } else {
+                        if random_prob <= *threshold_random_uniform {
+                            bitrate_bps += steps_bps; // increase bitrate by 1 step
                         }
                     }
+                } else {
+                    bitrate_bps -= steps_bps; // decrease bitrate by 1 step
                 }
+
+                // Ensure bitrate is within allowed range
+                bitrate_bps = minmax_bitrate(
+                    bitrate_bps,
+                    max_bitrate_mbps,
+                    min_bitrate_mbps,
+                );
+
+                let limit = *capacity_multiplier * capacity_estimation_peak;
+
+                bitrate_bps = round_down_to_nearest_multiple(
+                    f32::min(bitrate_bps, limit),
+                    steps_bps,
+                ); // Make sure that we're under the capacity estimation's limit and in a step
+
+                // Update heuristic stats
+                let heur_stats = HeuristicStats {
+                    frame_interval_s: frame_interval.as_secs_f32(),
+                    server_fps: server_fps,
+                    steps_bps: steps_bps,
+
+                    network_heur_fps: fps_heur,
+                    rtt_avg_heur_s: rtt_avg_heur,
+                    random_prob: random_prob,
+
+                    threshold_fps: threshold_fps,
+                    threshold_rtt_s: threshold_rtt,
+                    threshold_u: *threshold_random_uniform,
+
+                    requested_bitrate_bps: bitrate_bps,
+                };
+                // warn!("Heuristic Stats reported:  {:?}", heur_stats);
+                self.heur_stats = heur_stats.clone();
 
                 self.last_target_bitrate = bitrate_bps;
                 if let Switch::Enabled(max) = max_bitrate_mbps {

@@ -28,7 +28,7 @@ use alvr_packets::{
     ServerControlPacket, StreamConfigPacket, Tracking, VideoPacketHeader, AUDIO, HAPTICS,
     STATISTICS, TRACKING, VIDEO,
 };
-use alvr_session::{ControllersEmulationMode, FrameSize, OpenvrConfig, SessionConfig};
+use alvr_session::{BitrateMode, ControllersEmulationMode, FrameSize, OpenvrConfig, SessionConfig};
 use alvr_sockets::{
     PeerType, ProtoControlSocket, StreamSender, StreamSocketBuilder, KEEPALIVE_INTERVAL,
     KEEPALIVE_TIMEOUT,
@@ -534,7 +534,19 @@ fn connection_pipeline(
         },
     ));
 
-    *BITRATE_MANAGER.lock() = BitrateManager::new(settings.video.bitrate.history_size, fps);
+    let mut initial_bitrate = 30.0;
+    let config_mode = &server_data_lock.settings().video.bitrate.mode;
+
+    if let BitrateMode::SimpleHeuristic {
+        initial_bitrate_mbps,
+        ..
+    } = &config_mode
+    {
+        initial_bitrate = *initial_bitrate_mbps;
+    }
+
+    *BITRATE_MANAGER.lock() =
+        BitrateManager::new(settings.video.bitrate.history_size, fps, initial_bitrate);
 
     let mut stream_socket = StreamSocketBuilder::connect_to_client(
         HANDSHAKE_ACTION_TIMEOUT,
@@ -919,15 +931,14 @@ fn connection_pipeline(
                 if let Some(stats) = &mut *STATISTICS_MANAGER.lock() {
                     let timestamp = client_stats.target_timestamp;
                     let decoder_latency = client_stats.video_decode;
-                    let network_latency =
-                        stats.report_statistics(client_stats);
+                    let network_latency = stats.report_statistics(client_stats);
 
                     let server_data_lock = SERVER_DATA_MANAGER.read();
                     BITRATE_MANAGER.lock().report_frame_latencies(
                         &server_data_lock.settings().video.bitrate.mode,
                         timestamp,
                         network_latency,
-                        decoder_latency
+                        decoder_latency,
                     );
                 }
             }
@@ -1046,10 +1057,14 @@ fn connection_pipeline(
                                 // warn!("ZERO??");
                             }
 
-                            let (peak_network_throughput_bps, frame_interarrival) = stats.report_network_statistics(network_stats, rtt_network_alt);
+                            let (peak_network_throughput_bps, frame_interarrival) =
+                                stats.report_network_statistics(network_stats, rtt_network_alt);
 
-                            let heur_stats =
-                                BITRATE_MANAGER.lock().report_network_stats(rtt_network_alt, peak_network_throughput_bps, frame_interarrival);
+                            let heur_stats = BITRATE_MANAGER.lock().report_network_stats(
+                                rtt_network_alt,
+                                peak_network_throughput_bps,
+                                frame_interarrival,
+                            );
                             BITRATE_MANAGER.lock().report_heuristic_event(heur_stats);
                         }
                     }

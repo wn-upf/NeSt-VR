@@ -300,43 +300,47 @@ pub enum BitrateMode {
     },
     #[schema(collapsible)]
     SimpleHeuristic {
-        #[schema(strings(display_name = "Maximum bitrate"))]
+        #[schema(strings(display_name = "Adjustment period (tau)"))]
         #[schema(flag = "real-time")]
-        #[schema(gui(slider(min = 1.0, max = 1000.0, logarithmic)))]
-        max_bitrate_mbps: Switch<f32>,
-        #[schema(strings(display_name = "Minimum bitrate"))]
-        #[schema(flag = "real-time")]
-        #[schema(gui(slider(min = 1.0, max = 100.0, logarithmic)))]
-        min_bitrate_mbps: Switch<f32>,
-        #[schema(strings(display_name = "Steps of heuristic in mbps"))]
-        #[schema(flag = "real-time")]
-        #[schema(gui(slider(min = 1.0, max = 100.0, logarithmic)))]
-        steps_mbps: Switch<f32>,
+        #[schema(gui(slider(min = 0.1, max = 10.0, logarithmic)), suffix = "s")]
+        update_interval_heuristic: f32,
 
-        #[schema(strings(display_name = "Threshold of Random Uniform distribution"))]
+        #[schema(strings(display_name = "Maximum bitrate (B_max)"))]
+        #[schema(flag = "real-time")]
+        #[schema(gui(slider(min = 1.0, max = 1000.0, logarithmic)), suffix = "Mbps")]
+        max_bitrate_mbps: Switch<f32>,
+        #[schema(strings(display_name = "Minimum bitrate (B_min)"))]
+        #[schema(flag = "real-time")]
+        #[schema(gui(slider(min = 1.0, max = 1000.0, logarithmic)), suffix = "Mbps")]
+        min_bitrate_mbps: Switch<f32>,
+        #[schema(strings(display_name = "Initial bitrate (B_0)"))]
+        #[schema(gui(slider(min = 1.0, max = 1000.0, logarithmic)), suffix = "Mbps")]
+        initial_bitrate_mbps: f32,
+
+        #[schema(strings(display_name = "Step size (beta)"))]
+        #[schema(flag = "real-time")]
+        #[schema(gui(slider(min = 1.0, max = 100.0, logarithmic)), suffix = "Mbps")]
+        steps_mbps: f32,
+
+        #[schema(strings(display_name = "Estimated capacity scaling factor (m)"))]
         #[schema(flag = "real-time")]
         #[schema(gui(slider(min = 0.0, max = 1.0, logarithmic)))]
-        threshold_random_uniform: Switch<f32>,
+        capacity_multiplier: f32,
 
-        #[schema(strings(display_name = "Update Interval for heuristic"))]
+        #[schema(strings(display_name = "VF-RTT exploration probability (gamma)"))]
         #[schema(flag = "real-time")]
-        #[schema(gui(slider(min = 0.0, max = 5.0, logarithmic)))]
-        update_interval_heuristic: Switch<f32>,
+        #[schema(gui(slider(min = 0.0, max = 1.0, logarithmic)))]
+        threshold_random_uniform: f32,
 
-        #[schema(strings(display_name = "Multiplier for the threshold of 1/FPS in heuristic"))]
+        #[schema(strings(display_name = "NFR threshold (rho)"))]
+        #[schema(flag = "real-time")]
+        #[schema(gui(slider(min = 0.1, max = 1.0, logarithmic)))]
+        fps_threshold_multiplier: f32,
+
+        #[schema(strings(display_name = "VF-RTT threshold scaling factor (varsigma)"))]
         #[schema(flag = "real-time")]
         #[schema(gui(slider(min = 0.1, max = 5.0, logarithmic)))]
-        multiplier_rtt_threshold: Switch<f32>,
-
-        #[schema(strings(display_name = "Estimated Capacity Scaling Factor"))]
-        #[schema(flag = "real-time")]
-        #[schema(gui(slider(min = 0.0, max = 1.0, logarithmic)))]
-        capacity_multiplier: Switch<f32>,
-
-        #[schema(strings(display_name = "Threshold of 1/FPS in heuristic"))]
-        #[schema(flag = "real-time")]
-        #[schema(gui(slider(min = 0.1, max = 2.0, logarithmic)))]
-        fps_threshold_multiplier: Switch<f32>,
+        multiplier_rtt_threshold: f32,
     },
 }
 
@@ -357,14 +361,14 @@ pub struct BitrateConfig {
     #[schema(flag = "real-time")]
     pub mode: BitrateMode,
 
+    #[schema(strings(display_name = "Sliding window size (n)", help = "Controls the smoothness during calculations"))]
+    pub history_size: usize,
+
     #[schema(strings(
         help = "Ensure that the specified bitrate value is respected regardless of the framerate"
     ))]
     #[schema(flag = "real-time")]
     pub adapt_to_framerate: Switch<BitrateAdaptiveFramerateConfig>,
-
-    #[schema(strings(help = "Controls the smoothness during calculations"))]
-    pub history_size: usize,
 
     #[schema(strings(
         help = "When this is enabled, an IDR frame is requested after the bitrate is changed.
@@ -1246,49 +1250,38 @@ pub fn session_settings_default() -> SettingsDefault {
                     },
                     SimpleHeuristic: BitrateModeSimpleHeuristicDefault {
                         gui_collapsed: false,
+
+                        update_interval_heuristic: 1.0,
+
                         max_bitrate_mbps: SwitchDefault {
                             enabled: true,
                             content: 100.0,
                         },
                         min_bitrate_mbps: SwitchDefault {
                             enabled: true,
-                            content: 30.0,
-                        },
-
-                        steps_mbps: SwitchDefault {
-                            enabled: true,
                             content: 10.0,
                         },
-                        threshold_random_uniform: SwitchDefault {
-                            enabled: true,
-                            content: 0.25,
-                        },
-                        update_interval_heuristic: SwitchDefault {
-                            enabled: true,
-                            content: 1.0,
-                        },
-                        multiplier_rtt_threshold: SwitchDefault {
-                            enabled: true,
-                            content: 2.0,
-                        },
-                        fps_threshold_multiplier: SwitchDefault {
-                            enabled: true,
-                            content: 0.95,
-                        },
-                        capacity_multiplier: SwitchDefault {
-                            enabled: true,
-                            content: 0.9,
-                        },
+                        initial_bitrate_mbps: 30.0,
+
+                        steps_mbps: 10.0,
+
+                        capacity_multiplier: 0.9,
+
+                        threshold_random_uniform: 0.25,
+
+                        fps_threshold_multiplier: 0.95,
+
+                        multiplier_rtt_threshold: 2.0,
                     },
                     variant: BitrateModeDefaultVariant::SimpleHeuristic,
                 },
+                history_size: 256,
                 adapt_to_framerate: SwitchDefault {
                     enabled: false,
                     content: BitrateAdaptiveFramerateConfigDefault {
                         framerate_reset_threshold_multiplier: 2.0,
                     },
                 },
-                history_size: 256,
                 image_corruption_fix: false,
             },
             preferred_codec: CodecTypeDefault {
