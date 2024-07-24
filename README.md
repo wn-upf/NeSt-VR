@@ -93,6 +93,29 @@ ALVR has an option to store raw JSON logs in .txt files, as `session_log.txt`, t
 Through examining the `GraphStatistics` events in the text file, the range of original ALVR statistics for each frame can be obtained. In a similar manner, we add an event for `GraphNetworkStatistics` that logs our new metrics computed for each video frame in the stream, logged every time the extra uplink packet is received.  
 When using NeST-VR, an additional `HeuristicStats` event is generated for each update in the algorithm, with each of the metrics involved in the decision making process.  
 
+For instance, `GraphNetworkStatistics` includes the following fields: 
+```rust 
+pub struct GraphNetworkStatistics {
+    pub frame_index: u32,
+    pub client_fps: f32,
+    pub server_fps: f32,
+    pub frame_span_ms: f32,
+    pub interarrival_jitter_ms: f32,
+    pub ow_delay_ms: f32,
+    pub filtered_ow_delay_ms: f32,
+    pub rtt_ms: f32,
+    pub frame_interarrival_ms: f32,
+    pub frame_jitter_ms: f32,
+    pub frames_skipped: u32,
+    pub shards_lost: isize,
+    pub shards_duplicated: u32,
+    pub instant_network_throughput_bps: f32,
+    pub peak_network_throughput_bps: f32,
+    pub nominal_bitrate: NominalBitrateStats,
+    pub interval_avg_plot_throughput: f32,
+}
+```
+
 ## Requirements
 
 -   A supported standalone VR headset - Meta Quest 2 was used by us. 
