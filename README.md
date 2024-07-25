@@ -10,7 +10,7 @@ The following metrics have been added to our fork of ALVR to monitor the arrival
   <img src="https://github.com/wn-upf/ALVR_ABR_UPF/blob/master/images/Metrics_dashboard.png" alt="Alt Text" width="200" />
 </div>
 
-The metrics have been validated independently via a set of experiments, involving parsing wireshark captures of the generated VR traffic during the stream for an independent comparsion. For traces of the experiments, head to our [Zenodo](https://doi.org/10.5281/zenodo.12773446)
+The metrics have been validated via a set of experiments, involving parsing wireshark captures of the generated VR traffic during the stream for an independent comparison. For traces of the experiments, plus a comparison between CBR, `Adaptive` and `NeST-VR` in two different scenarios head to our [Zenodo](https://doi.org/10.5281/zenodo.12773446)
 
 ## Metrics: 
 ### Time-related metrics
