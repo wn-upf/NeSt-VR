@@ -50,7 +50,7 @@ At each update, the Network Frame Ratio (NFR) and Video Frame Round-Trip Time (V
 * The NFR is defined as `(fps_rx/fps_tx)`, where `fps_rx` is the rate of correct VF receival over the HMD, while `fps_tx` is the rate of VF transmission from the server. Thus, the NFR indicates network reliability in delivering complete Video Frames (VFs) to the HMD. 
 
 * VF-RTT measures the latency associated to the network in delivering VFs. Excessive latency is unencouraged, so we simply put thresholds for these two metrics to vary the bitrate accordingly.
-While jitter or packet loss metrics are not explicitly used by NeST-VR, they have a direct effect on the NFR if their levels are excessive, and so are accounted for and measured. 
+While jitter or packet loss metrics are not explicitly used by NeST-VR, they have a direct effect on the NFR if their levels are excessive, and so are accounted for implicitly. 
 
 The decision-making process of NeST-VR involves the following steps:  
 - **NFR Below Threshold ρ:** Reduces bitrate to minimize packet loss and improve frame delivery.
