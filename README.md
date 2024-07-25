@@ -6,19 +6,24 @@ This **fork of [ALVR v20.6.0](https://github.com/alvr-org/ALVR)** introduces sev
 
 In particular, our project integrates **additional metrics** to characterize the network state during streaming, providing insights into video frame (VF) delivery and network performance. Our metrics are logged in the `session_log.txt` file when the `Log to disk` setting is enabled and are also displayed in real time on the `Statistics` tab of the ALVR dashboard:
 
-|  |  |
-| --- | --- |
-| ![dashboard](./images/metrics_dashboard_1.png) | ![dashboard](./images/metrics_dashboard_2.png) |
-|  |  |
+<table style="width:100%; text-align:center;">
+  <tr>
+    <td><img src="./images/metrics_dashboard_1.png" alt="dashboard" width="150"/></td>
+    <td><img src="./images/metrics_dashboard_2.png" alt="dashboard" width="150"/></td>
+  </tr>
+</table>
 
 Our project also implements the **Network-aware Step-wise ABR algorithm (NeSt-VR)**, an Adaptive BitRate (ABR) algorithm designed to optimize streaming quality based on real-time network conditions. 
 
-![nest_vr](./images/MaxR-video-July.gif)
+<div style="text-align: center;">
+  <img src="./images/MaxR-video-July.gif" alt="nest_vr" width="300"/>
+</div>
 
 This algorithm is implemented as a new bitrate mode in ALVR, named `NeSt vr`:
 
-![nestvr_settings](./images/Settings_NeST-VR.png)
-
+<div style="text-align:center">
+<img src="./images/Settings_NeST-VR.png" alt="nestvr_settings" width="300"/>
+</div>
 
 For a comprehensive validation of several metrics and a detailed introduction and evaluation of the NeSt-VR algorithm, please refer to our paper:  **["Experimenting with Adaptive Bitrate Algorithms for Virtual Reality Streaming over Wi-Fi"](https://arxiv.org/abs/2407.15614)**.
 
@@ -61,7 +66,10 @@ as described in ["Analysis and design of the google congestion control for web r
 
 NeSt-VR applies a hierarchical decision-making process, operating every $\tau$ seconds and progressively adjusting the target bitrate ($B_v$) —initially set to ($B_0$) Mbps— in $\beta$ Mbps steps to avoid significant video quality shifts that may disrupt the user’s QoE. NeSt-VR uses the Network Frame Ratio (NFR) and VF-RTT —averaged over an $n$-sample sliding window ($\overline{\;\centerdot\;}$)— as inputs, adjusting the bitrate if their values surpass configurable thresholds ($\rho$ and $\sigma$, respectively). The target bitrate is also constrained within the configured maximum and minimum bitrate limits ($B_{\max}$ and $B_{\min}$) and is further upper bounded by $m \cdot C_{\text{NeSt-VR}}$ —with $m \leq 1$— to  ensure the bitrate remains under our estimated network capacity ($C_{\text{NeSt-VR}}$):
 
-![nest_vr](./images/stepwise-abr-nest.png)
+
+<div style="text-align:center">
+<img src="./images/stepwise-abr-nest.png" alt="nestvr" width="300"/>
+</div>
 
 > **Note:** NFR is computed as $\overline{\text{fps}_{\rm rx}}/{\overline{\text{fps}_{\rm tx}}}$. $\overline{\text{fps}_{\rm rx}}$ denotes the average frame delivery rate
 and $\overline{\text{fps}_{\rm tx}}$ denotes the average frame transmission rate (`network_heur_fps` and `server_fps`, respectively, in `HeuristicStats`)
@@ -97,7 +105,26 @@ For further details on how ALVR works, consult their wiki: [How ALVR Works](http
 
 This project is developed with partial financial support of:
 
-|  MAX-R Project (HORIZON) | Wi-XR Project (PID2021-123995NB-I00) |
-| --- | --- |
-| ![logomaxr](./images/logo_maxr_main_sRGB.png#gh-light-mode-only) ![logomaxr](./images/logo_maxr_main_sRGB_light.png#gh-dark-mode-only) | ![miciu](./images/miciu-cofinanciadoUE-aei.png) |
+<table>
+  <tr>
+    <td>
+      <picture>
+        <!-- Dark mode image -->
+        <source srcset="./images/logo_maxr_main_sRGB_light.png" media="(prefers-color-scheme: dark)" />
+        <!-- Light mode image -->
+        <source srcset="./images/logo_maxr_main_sRGB.png" media="(prefers-color-scheme: light)" />
+        <!-- Fallback image -->
+        <img src="./images/logo_maxr_main_sRGB.png" alt="logomaxr" width="250" />
+      </picture>
+    </td>
+    <td>
+      <img src="./images/miciu-cofinanciadoUE-aei.png" alt="miciu" width="250" />
+    </td>
+  </tr>
+  <tr>
+    <td><strong>MAX-R Project (HORIZON)</strong></td>
+    <td><strong>Wi-XR Project (PID2021-123995NB-I00)</strong></td>
+  </tr>
+</table>
+
 
