@@ -32,7 +32,10 @@ the network’s capability to sustain the desired video quality according to the
 * **VF jitter**: variation in VF time deliveries, providing insight into the smoothness of video playback. It is computed as the sample standard deviation of frame inter-arrival times over a 256 sample sliding window.
 * **Video packet jitter**: variability in video packet arrival times, using the formulas defined in [RFC 3550](https://datatracker.ietf.org/doc/html/rfc3550), providing insight into the consistency of packet delivery.
 * **Filtered one-way delay gradient**: computed using the formulas specified in the [GCC design paper](https://dl.acm.org/doi/10.1145/2910017.2910605), indicates the rate of change and its direction in queueing and transmission delays between two consecutive VFs. We implement the Kalman filter with state noise variance of `Q = 10^(−7)`, which we judged appropiate for 90 FPS streams. 
-
+### Extras
+In order to facilitate testing, we make two small changes to ALVR's pipeline:
+* An extra uplink (HMD to server) packet is sent when a full VF is received. The original uplink packet sent in ALVR when the same VF is visualized is mantained. This packet is used to compute the VF-RTT metric mentioned previously, while fields with metrics are included inside the 56 byte packet, to effectively reduce at the server the delay of feedback from the HMD.
+* A setting to enable a periodic timer at the HMD to periodically request IDR frames with configurable frequency, in order to mimic the Group of Pictures structure for video streaming.
 
 ## NeST-VR: 
 
