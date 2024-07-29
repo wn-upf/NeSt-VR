@@ -71,8 +71,7 @@ NeSt-VR applies a hierarchical decision-making process, operating every $\tau$ s
 <img src="./images/stepwise-abr-nest.png" alt="nestvr" width="300"/>
 </div>
 
-> **Note:** NFR is computed as $\overline{\text{fps}_{\rm rx}}/{\overline{\text{fps}_{\rm tx}}}$. $\overline{\text{fps}_{\rm rx}}$ denotes the average frame delivery rate
-and $\overline{\text{fps}_{\rm tx}}$ denotes the average frame transmission rate (`network_heur_fps` and `server_fps`, respectively, in `HeuristicStats`)
+> **Note:** NFR is computed as `fps_rx / fps_tx`, where `fps_rx` denotes the average frame delivery rate and `fps_tx` denotes the average frame transmission rate (`network_heur_fps` and `server_fps`, respectively, in `HeuristicStats`)
 
 > **Note:** $\sigma$ is computed as $\varsigma/{\overline{\Delta_{\rm tx}}}$. $\varsigma$ is a configurable parameter and $\overline{\Delta_{\rm tx}}$ denotes the average interval between consecutive VFs transmissions
 
