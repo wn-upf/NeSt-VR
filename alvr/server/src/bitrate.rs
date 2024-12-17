@@ -1,4 +1,4 @@
-use crate::FfiDynamicEncoderParams;
+use crate::{bitrate, FfiDynamicEncoderParams};
 use alvr_common::SlidingWindowAverage;
 use alvr_events::{EventType, HeuristicStats, NominalBitrateStats};
 use alvr_session::{
@@ -7,8 +7,9 @@ use alvr_session::{
 use std::{
     collections::VecDeque,
     time::{Duration, Instant},
+    cmp::Ordering, 
 };
-
+use alvr_common::warn; 
 use rand::distributions::Uniform;
 use rand::{thread_rng, Rng};
 
@@ -36,6 +37,10 @@ pub struct BitrateManager {
     rtt_average: SlidingWindowAverage<Duration>,
     peak_throughput_average: SlidingWindowAverage<f32>,
     frame_interarrival_average: SlidingWindowAverage<f32>,
+
+
+    bitrate_ladder_nestvr: Option<Vec<f32>>,
+    delta_bitrate_step: f32,
 }
 impl BitrateManager {
     pub fn new(max_history_size: usize, initial_framerate: f32, initial_bitrate: f32) -> Self {
@@ -71,6 +76,8 @@ impl BitrateManager {
                 1. / initial_framerate,
                 max_history_size,
             ),
+            bitrate_ladder_nestvr: None, 
+            delta_bitrate_step: 0.0, 
         }
     }
 
@@ -221,15 +228,70 @@ impl BitrateManager {
                 max_bitrate_mbps,
                 min_bitrate_mbps,
                 initial_bitrate_mbps,
-                step_size_mbps,
+                // step_size_mbps,
                 capacity_scaling_factor,
                 rtt_explor_prob,
                 nfr_thresh,
+
                 rtt_thresh_scaling_factor,
+                num_steps_bitrate_ladder,
+                mulitplier_bitrate_increase,
+                multiplier_bitrate_decrease,
                 ..
             } => {
+
                 fn floor_to_nearest_mult_from_initial(value: f32, step: f32, initial: f32) -> f32 {
                     initial + ((value - initial) / step).floor() * step
+                }
+
+                fn upper_bound_bitrate(bitrate_bps: f32, bitrate_ladder: &Vec<f32>) -> f32 {
+                    // Perform binary search to find the largest value less than or equal to `bitrate_bps`
+                    match bitrate_ladder.binary_search_by(|x| x.partial_cmp(&bitrate_bps).unwrap_or(Ordering::Less)) {
+                        Ok(index) => bitrate_ladder[index], // Exact match found
+                        Err(index) => {
+                            // If not found, `index` is where the value would be inserted to maintain sorted order
+                            if index == 0 {
+                                // If `bitrate_bps` is smaller than the first element, return the first element
+                                bitrate_ladder.first().copied().unwrap_or(bitrate_bps)
+                            } else {
+                                // Otherwise, return the element just before the insertion point (i.e., the largest <= bitrate_bps)
+                                bitrate_ladder[index - 1]
+                            }
+                        }
+                    }
+                }
+
+                
+                if self.bitrate_ladder_nestvr.is_none(){ // if uninitialized, initialize it for first time
+                    
+                    let num_steps = *num_steps_bitrate_ladder; 
+                    let mut max_b: f32 = 0.0; 
+                    let mut min_b: f32 = 0.0; 
+                    
+                    if let Switch::Enabled(max) = max_bitrate_mbps {
+                        max_b = *max as f32 * 1e6;
+                    }
+                    if let Switch::Enabled(min) = min_bitrate_mbps {
+                        min_b = *min as f32 * 1e6;
+                    }
+                    
+                    if max_b != 0.0 && min_b != 0.0 { // ensure values are initialized
+                        let mut vec_bitrates =Vec::new(); 
+
+                        let delta_b_step = (max_b - min_b)/num_steps as f32;  
+
+                        let mut last_value = min_b; 
+                        vec_bitrates.push(min_b); // first bitrate is min
+                        for i in 0..num_steps{
+                            last_value += delta_b_step; 
+                            vec_bitrates.push(last_value); 
+
+                            warn!("Adding bitrate to ladder: {}", last_value ); 
+                        }
+                        warn!("[DBG NEW LADDER] bitrate_ladder all values: {:?}", vec_bitrates); 
+                        self.bitrate_ladder_nestvr = Some(vec_bitrates); // at this point vec_bitrates is initialized, we can unwrap safely to retrieve
+                        self.delta_bitrate_step = delta_b_step; 
+                    }          
                 }
 
                 fn minmax_bitrate(
@@ -241,6 +303,7 @@ impl BitrateManager {
                     if let Switch::Enabled(max) = max_bitrate_mbps {
                         let max = *max as f32 * 1e6;
                         bitrate = f32::min(bitrate, max);
+
                     }
                     if let Switch::Enabled(min) = min_bitrate_mbps {
                         let min = *min as f32 * 1e6;
@@ -271,24 +334,26 @@ impl BitrateManager {
                 };
 
                 let estimated_capacity_bps = self.peak_throughput_average.get_average();
-                let steps_bps = *step_size_mbps * 1E6;
 
                 let threshold_fps = *nfr_thresh * server_fps;
                 let threshold_rtt = frame_interval_s * *rtt_thresh_scaling_factor;
                 let threshold_u = *rtt_explor_prob;
+          
+                // mulitplier_bitrate_increase,
+                // multiplier_bitrate_decrease,
 
                 if heur_fps >= threshold_fps {
                     if rtt_avg_heur_s > threshold_rtt {
                         if random_prob >= threshold_u {
-                            bitrate_bps -= steps_bps; // decrease bitrate by 1 step
+                            bitrate_bps -= (self.delta_bitrate_step * (*multiplier_bitrate_decrease as f32)); // decrease bitrate by 1 step
                         }
                     } else {
                         if random_prob <= threshold_u {
-                            bitrate_bps += steps_bps; // increase bitrate by 1 step
+                            bitrate_bps += (self.delta_bitrate_step * (*mulitplier_bitrate_increase as f32)); // decrease bitrate by 1 step
                         }
                     }
                 } else {
-                    bitrate_bps -= steps_bps; // decrease bitrate by 1 step
+                    bitrate_bps -= (self.delta_bitrate_step * (*multiplier_bitrate_decrease as f32)); // decrease bitrate by 1 step
                 }
 
                 // Ensure bitrate is within allowed range
@@ -296,16 +361,23 @@ impl BitrateManager {
 
                 // Ensure bitrate is below the estimated network capacity
                 let capacity_upper_limit = *capacity_scaling_factor * estimated_capacity_bps;
-                bitrate_bps = floor_to_nearest_mult_from_initial(
-                    f32::min(bitrate_bps, capacity_upper_limit),
-                    steps_bps,
-                    initial_bitrate_mbps * 1E6,
-                );
+                // bitrate_bps = floor_to_nearest_mult_from_initial(
+                //     f32::min(bitrate_bps, capacity_upper_limit),
+                //     steps_bps,
+                //     initial_bitrate_mbps * 1E6,
+                // );
+
+                warn!("[DBG BITRATE LADDER] bitrate_bps in: {}, capacity_upper_limit: {}", bitrate_bps, capacity_upper_limit); 
+
+                bitrate_bps =  upper_bound_bitrate(f32::min(bitrate_bps, capacity_upper_limit), &self.bitrate_ladder_nestvr.clone().unwrap()); 
+                warn!("[DBG BITRATE LADDER OUT] bitrate_bps_out =  {}", bitrate_bps); 
+
+
 
                 let heur_stats = HeuristicStats {
                     frame_interval_s: frame_interval_s,
                     server_fps: server_fps, // fps_tx
-                    steps_bps: steps_bps,
+                    steps_bps: self.delta_bitrate_step,
 
                     network_heur_fps: heur_fps, // fps_rx
                     rtt_avg_heur_s: rtt_avg_heur_s,
@@ -329,6 +401,7 @@ impl BitrateManager {
                 }
                 bitrate_bps
             }
+              
             BitrateMode::Adaptive {
                 saturation_multiplier,
                 max_bitrate_mbps,

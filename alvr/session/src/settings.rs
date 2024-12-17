@@ -317,10 +317,10 @@ pub enum BitrateMode {
         #[schema(gui(slider(min = 1.0, max = 1000.0, logarithmic)), suffix = "Mbps")]
         initial_bitrate_mbps: f32,
 
-        #[schema(strings(display_name = "Step size (beta)"))]
-        #[schema(flag = "real-time")]
-        #[schema(gui(slider(min = 1.0, max = 100.0, logarithmic)), suffix = "Mbps")]
-        step_size_mbps: f32,
+        // #[schema(strings(display_name = "Step size (beta)"))]
+        // #[schema(flag = "real-time")]
+        // #[schema(gui(slider(min = 1.0, max = 100.0, logarithmic)), suffix = "Mbps")]
+        // step_size_mbps: f32,
 
         #[schema(strings(display_name = "Estimated capacity scaling factor (m)"))]
         #[schema(flag = "real-time")]
@@ -341,6 +341,20 @@ pub enum BitrateMode {
         #[schema(flag = "real-time")]
         #[schema(gui(slider(min = 0.1, max = 5.0, logarithmic)))]
         rtt_thresh_scaling_factor: f32,
+
+        #[schema(strings(display_name = "Bitrate ladder num of steps"))]
+        #[schema(flag = "real-time")]
+        #[schema(gui(slider(min = 0, max = 200, step=1)))]
+        num_steps_bitrate_ladder: usize, 
+
+        #[schema(strings(display_name = "Bitrate ladder steps to jump when increasing"))]
+        #[schema(flag = "real-time")]
+        #[schema(gui(slider(min = 0, max = 50, step=1)))]
+        mulitplier_bitrate_increase: usize, 
+        #[schema(strings(display_name = "Bitrate ladder steps to jump when decreasing"))]
+        #[schema(flag = "real-time")]
+        #[schema(gui(slider(min = 0, max = 50, step=1)))]
+        multiplier_bitrate_decrease: usize, 
     },
 }
 
@@ -1266,7 +1280,7 @@ pub fn session_settings_default() -> SettingsDefault {
                         },
                         initial_bitrate_mbps: 30.0,
 
-                        step_size_mbps: 10.0,
+                        // step_size_mbps: 10.0,
 
                         capacity_scaling_factor: 0.9,
 
@@ -1275,6 +1289,10 @@ pub fn session_settings_default() -> SettingsDefault {
                         nfr_thresh: 0.95,
 
                         rtt_thresh_scaling_factor: 2.0,
+
+                        num_steps_bitrate_ladder: 10, 
+                        mulitplier_bitrate_increase: 1,
+                        multiplier_bitrate_decrease: 1, 
                     },
                     variant: BitrateModeDefaultVariant::NestVr,
                 },
