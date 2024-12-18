@@ -321,7 +321,6 @@ pub enum BitrateMode {
         // #[schema(flag = "real-time")]
         // #[schema(gui(slider(min = 1.0, max = 100.0, logarithmic)), suffix = "Mbps")]
         // step_size_mbps: f32,
-
         #[schema(strings(display_name = "Estimated capacity scaling factor (m)"))]
         #[schema(flag = "real-time")]
         #[schema(gui(slider(min = 0.0, max = 1.0, logarithmic)))]
@@ -344,17 +343,17 @@ pub enum BitrateMode {
 
         #[schema(strings(display_name = "Bitrate ladder num of steps"))]
         #[schema(flag = "real-time")]
-        #[schema(gui(slider(min = 0, max = 200, step=1)))]
-        num_steps_bitrate_ladder: usize, 
+        #[schema(gui(slider(min = 0, max = 200, step = 1)))]
+        num_steps_bitrate_ladder: usize,
 
         #[schema(strings(display_name = "Bitrate ladder steps to jump when increasing"))]
         #[schema(flag = "real-time")]
-        #[schema(gui(slider(min = 0, max = 50, step=1)))]
-        mulitplier_bitrate_increase: usize, 
+        #[schema(gui(slider(min = 0, max = 50, step = 1)))]
+        mulitplier_bitrate_increase: usize,
         #[schema(strings(display_name = "Bitrate ladder steps to jump when decreasing"))]
         #[schema(flag = "real-time")]
-        #[schema(gui(slider(min = 0, max = 50, step=1)))]
-        multiplier_bitrate_decrease: usize, 
+        #[schema(gui(slider(min = 0, max = 50, step = 1)))]
+        multiplier_bitrate_decrease: usize,
     },
 }
 
@@ -503,7 +502,6 @@ pub enum H264Profile {
 }
 
 #[derive(SettingsSchema, Serialize, Deserialize, Clone)]
-#[schema(collapsible)]
 pub struct VideoConfig {
     #[schema(strings(help = "You probably don't want to change this"))]
     #[schema(flag = "steamvr-restart")]
@@ -637,7 +635,6 @@ pub struct MicrophoneConfig {
 }
 
 #[derive(SettingsSchema, Serialize, Deserialize, Clone)]
-#[schema(collapsible)]
 pub struct AudioConfig {
     #[schema(strings(help = "ALSA is recommended for most PulseAudio or PipeWire-based setups"))]
     pub linux_backend: LinuxAudioBackend,
@@ -930,7 +927,6 @@ pub enum RotationRecenteringMode {
 }
 
 #[derive(SettingsSchema, Serialize, Deserialize, Clone)]
-#[schema(collapsible)]
 pub struct HeadsetConfig {
     #[schema(flag = "steamvr-restart")]
     pub emulation_mode: HeadsetEmulationMode,
@@ -991,7 +987,6 @@ pub enum SocketBufferSize {
 }
 
 #[derive(SettingsSchema, Serialize, Deserialize, Clone)]
-#[schema(collapsible)]
 pub struct ConnectionConfig {
     #[schema(strings(
         help = r#"UDP: Faster, but less stable than TCP. Try this if your network is well optimized and free of interference.
@@ -1093,7 +1088,6 @@ pub struct RawEventsConfig {
 }
 
 #[derive(SettingsSchema, Serialize, Deserialize, Clone)]
-#[schema(collapsible)]
 pub struct LoggingConfig {
     pub client_log_report_level: Switch<LogSeverity>,
 
@@ -1129,6 +1123,14 @@ pub enum DriverLaunchAction {
     #[schema(strings(display_name = "Unregister ALVR at shutdown"))]
     UnregisterAlvrAtShutdown,
     NoAction,
+}
+
+#[derive(SettingsSchema, Serialize, Deserialize, Clone)]
+pub struct OthersConfig {
+    pub steamvr_launcher: SteamvrLauncher,
+    pub capture: CaptureConfig,
+    pub patches: Patches,
+    pub open_setup_wizard: bool,
 }
 
 #[derive(SettingsSchema, Serialize, Deserialize, Clone)]
@@ -1187,10 +1189,7 @@ pub struct Settings {
     pub headset: HeadsetConfig,
     pub connection: ConnectionConfig,
     pub logging: LoggingConfig,
-    pub steamvr_launcher: SteamvrLauncher,
-    pub capture: CaptureConfig,
-    pub patches: Patches,
-    pub open_setup_wizard: bool,
+    pub others: OthersConfig,
 }
 
 pub fn session_settings_default() -> SettingsDefault {
@@ -1222,7 +1221,6 @@ pub fn session_settings_default() -> SettingsDefault {
 
     SettingsDefault {
         video: VideoConfigDefault {
-            gui_collapsed: false,
             adapter_index: 0,
             transcoding_view_resolution: view_resolution.clone(),
             emulated_headset_view_resolution: view_resolution,
@@ -1281,7 +1279,6 @@ pub fn session_settings_default() -> SettingsDefault {
                         initial_bitrate_mbps: 30.0,
 
                         // step_size_mbps: 10.0,
-
                         capacity_scaling_factor: 0.9,
 
                         rtt_explor_prob: 0.25,
@@ -1290,9 +1287,9 @@ pub fn session_settings_default() -> SettingsDefault {
 
                         rtt_thresh_scaling_factor: 2.0,
 
-                        num_steps_bitrate_ladder: 10, 
+                        num_steps_bitrate_ladder: 10,
                         mulitplier_bitrate_increase: 1,
-                        multiplier_bitrate_decrease: 1, 
+                        multiplier_bitrate_decrease: 1,
                     },
                     variant: BitrateModeDefaultVariant::NestVr,
                 },
@@ -1428,7 +1425,7 @@ pub fn session_settings_default() -> SettingsDefault {
             color_correction: SwitchDefault {
                 enabled: true,
                 content: ColorCorrectionConfigDefault {
-                    gui_collapsed: false,
+                    gui_collapsed: true,
                     brightness: 0.,
                     contrast: 0.,
                     saturation: 0.5,
@@ -1438,7 +1435,6 @@ pub fn session_settings_default() -> SettingsDefault {
             },
         },
         audio: AudioConfigDefault {
-            gui_collapsed: false,
             linux_backend: LinuxAudioBackendDefault {
                 variant: LinuxAudioBackendDefaultVariant::Alsa,
             },
@@ -1478,7 +1474,6 @@ pub fn session_settings_default() -> SettingsDefault {
             },
         },
         headset: HeadsetConfigDefault {
-            gui_collapsed: false,
             emulation_mode: HeadsetEmulationModeDefault {
                 Custom: HeadsetEmulationModeCustomDefault {
                     serial_number: "Unknown".into(),
@@ -1624,7 +1619,6 @@ pub fn session_settings_default() -> SettingsDefault {
             },
         },
         connection: ConnectionConfigDefault {
-            gui_collapsed: false,
             stream_protocol: SocketProtocolDefault {
                 variant: SocketProtocolDefaultVariant::Udp,
             },
@@ -1665,7 +1659,6 @@ pub fn session_settings_default() -> SettingsDefault {
             statistics_history_size: 256,
         },
         logging: LoggingConfigDefault {
-            gui_collapsed: false,
             client_log_report_level: SwitchDefault {
                 enabled: true,
                 content: LogSeverityDefault {
@@ -1692,31 +1685,33 @@ pub fn session_settings_default() -> SettingsDefault {
             prefer_backtrace: false,
             show_notification_tip: true,
         },
-        steamvr_launcher: SteamvrLauncherDefault {
-            gui_collapsed: false,
-            driver_launch_action: DriverLaunchActionDefault {
-                variant: DriverLaunchActionDefaultVariant::UnregisterOtherDriversAtStartup,
+        others: OthersConfigDefault {
+            steamvr_launcher: SteamvrLauncherDefault {
+                gui_collapsed: true,
+                driver_launch_action: DriverLaunchActionDefault {
+                    variant: DriverLaunchActionDefaultVariant::UnregisterOtherDriversAtStartup,
+                },
+                open_close_steamvr_with_dashboard: false,
             },
-            open_close_steamvr_with_dashboard: false,
-        },
-        capture: CaptureConfigDefault {
-            gui_collapsed: false,
-            startup_video_recording: false,
-            rolling_video_files: SwitchDefault {
-                enabled: false,
-                content: RollingVideoFilesConfigDefault { duration_s: 5 },
+            capture: CaptureConfigDefault {
+                gui_collapsed: true,
+                startup_video_recording: false,
+                rolling_video_files: SwitchDefault {
+                    enabled: false,
+                    content: RollingVideoFilesConfigDefault { duration_s: 5 },
+                },
+                capture_frame_dir: if !cfg!(target_os = "linux") {
+                    "/tmp".into()
+                } else {
+                    "".into()
+                },
             },
-            capture_frame_dir: if !cfg!(target_os = "linux") {
-                "/tmp".into()
-            } else {
-                "".into()
+            patches: PatchesDefault {
+                gui_collapsed: true,
+                linux_async_compute: false,
+                linux_async_reprojection: false,
             },
+            open_setup_wizard: alvr_common::is_stable() || alvr_common::is_nightly(),
         },
-        patches: PatchesDefault {
-            gui_collapsed: false,
-            linux_async_compute: false,
-            linux_async_reprojection: false,
-        },
-        open_setup_wizard: alvr_common::is_stable() || alvr_common::is_nightly(),
     }
 }

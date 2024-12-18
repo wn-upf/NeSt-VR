@@ -177,8 +177,8 @@ pub fn contruct_openvr_config(session: &SessionConfig) -> OpenvrConfig {
         saturation,
         gamma,
         sharpening,
-        linux_async_compute: settings.patches.linux_async_compute,
-        linux_async_reprojection: settings.patches.linux_async_reprojection,
+        linux_async_compute: settings.others.patches.linux_async_compute,
+        linux_async_reprojection: settings.others.patches.linux_async_reprojection,
         nvenc_tuning_preset: nvenc_overrides.tuning_preset as u32,
         nvenc_multi_pass: nvenc_overrides.multi_pass as u32,
         nvenc_adaptive_quantization_mode: nvenc_overrides.adaptive_quantization_mode as u32,
@@ -196,7 +196,7 @@ pub fn contruct_openvr_config(session: &SessionConfig) -> OpenvrConfig {
         rc_max_bitrate: nvenc_overrides.rc_max_bitrate,
         rc_average_bitrate: nvenc_overrides.rc_average_bitrate,
         nvenc_enable_weighted_prediction: nvenc_overrides.enable_weighted_prediction,
-        capture_frame_dir: settings.capture.capture_frame_dir,
+        capture_frame_dir: settings.others.capture.capture_frame_dir,
         amd_bitrate_corruption_fix: settings.video.bitrate.image_corruption_fix,
         _controller_profile,
         ..old_config
@@ -1209,7 +1209,7 @@ fn connection_pipeline(
         }
     }
 
-    if settings.capture.startup_video_recording {
+    if settings.others.capture.startup_video_recording {
         crate::create_recording_file(server_data_lock.settings());
     }
 
@@ -1282,6 +1282,7 @@ pub extern "C" fn send_video(timestamp_ns: u64, buffer_ptr: *mut u8, len: i32, i
         if let Switch::Enabled(config) = &SERVER_DATA_MANAGER
             .read()
             .settings()
+            .others
             .capture
             .rolling_video_files
         {

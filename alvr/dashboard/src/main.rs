@@ -62,11 +62,12 @@ fn main() {
             let mut session_ref = data_manager.session_mut();
             session_ref.server_version = ALVR_VERSION.clone();
             session_ref.client_connections.clear();
-            session_ref.session_settings.open_setup_wizard = true;
+            session_ref.session_settings.others.open_setup_wizard = true;
         }
 
         if data_manager
             .settings()
+            .others
             .steamvr_launcher
             .open_close_steamvr_with_dashboard
         {
