@@ -28,7 +28,10 @@ use alvr_packets::{
     ServerControlPacket, StreamConfigPacket, Tracking, VideoPacketHeader, AUDIO, HAPTICS,
     STATISTICS, TRACKING, VIDEO,
 };
-use alvr_session::{BitrateMode, ControllersEmulationMode, FrameSize, OpenvrConfig, SessionConfig};
+use alvr_session::{
+    get_profile_config, AveragingStrategy, BitrateMode, ControllersEmulationMode, FrameSize,
+    OpenvrConfig, SessionConfig, WindowType,
+};
 use alvr_sockets::{
     PeerType, ProtoControlSocket, StreamSender, StreamSocketBuilder, KEEPALIVE_INTERVAL,
     KEEPALIVE_TIMEOUT,
@@ -535,18 +538,67 @@ fn connection_pipeline(
     ));
 
     let mut initial_bitrate = 30.0;
+    let mut max_history_size = Some(256);
+    let mut history_interval = None;
+    let mut ewma_weight_val = None;
+
     let config_mode = &server_data_lock.settings().video.bitrate.mode;
 
-    if let BitrateMode::NestVr {
-        initial_bitrate_mbps,
-        ..
-    } = &config_mode
-    {
-        initial_bitrate = *initial_bitrate_mbps;
+    match config_mode {
+        BitrateMode::NestVr {
+            max_bitrate_mbps,
+            min_bitrate_mbps,
+            initial_bitrate_mbps,
+            averaging_strategy,
+            nest_vr_profile,
+            ..
+        } => {
+            initial_bitrate = *initial_bitrate_mbps;
+
+            let profile_config = get_profile_config(
+                *max_bitrate_mbps,
+                *min_bitrate_mbps,
+                *initial_bitrate_mbps,
+                nest_vr_profile,
+            );
+
+            match averaging_strategy {
+                AveragingStrategy::SimpleWindowAverage { window_type, .. } => match window_type {
+                    WindowType::BySeconds {
+                        sliding_window_secs,
+                        ..
+                    } => {
+                        history_interval = Some(Duration::from_secs_f32(
+                            sliding_window_secs.unwrap_or(profile_config.update_interval_nestvr_s),
+                        ));
+
+                        max_history_size = None; // so that the history is only cleaned given interval
+                    }
+                    WindowType::BySamples {
+                        sliding_window_samp,
+                        ..
+                    } => {
+                        max_history_size = Some(*sliding_window_samp);
+                    }
+                },
+                AveragingStrategy::ExponentialMovingAverage { ewma_weight, .. } => {
+                    ewma_weight_val = Some(*ewma_weight);
+                }
+            }
+        }
+        BitrateMode::Adaptive { history_size, .. } => {
+            max_history_size = Some(*history_size);
+        }
+        _ => {}
     }
 
-    *BITRATE_MANAGER.lock() =
-        BitrateManager::new(settings.video.bitrate.history_size, fps, initial_bitrate);
+    *BITRATE_MANAGER.lock() = BitrateManager::new(
+        max_history_size,
+        fps,
+        initial_bitrate,
+        history_interval,
+        ewma_weight_val,
+    );
 
     let mut stream_socket = StreamSocketBuilder::connect_to_client(
         HANDSHAKE_ACTION_TIMEOUT,

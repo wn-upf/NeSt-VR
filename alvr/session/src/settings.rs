@@ -260,6 +260,101 @@ pub struct DecoderLatencyLimiter {
 }
 
 #[derive(SettingsSchema, Serialize, Deserialize, Clone, PartialEq)]
+
+pub enum AveragingStrategy {
+    #[schema(strings(display_name = "Simple Window Average"))]
+    SimpleWindowAverage {
+        #[schema(flag = "real-time")]
+        #[schema(strings(display_name = "Statistics sliding window type"))]
+        window_type: WindowType,
+    },
+    #[schema(strings(display_name = "Exponential Weighted Moving Average"))]
+    ExponentialMovingAverage {
+        #[schema(flag = "real-time")]
+        #[schema(strings(
+            help = "EWMA_t = alpha*r_t+(1-alpha)*EWMA_{t-1}, where `alpha` denotes the EWMA weight and `r` is the value in the current period."
+        ))]
+        #[schema(gui(slider(min = 0.1, max = 1.0, step = 0.01)))]
+        ewma_weight: f32,
+    },
+}
+
+#[derive(SettingsSchema, Serialize, Deserialize, Clone, PartialEq)]
+
+pub enum WindowType {
+    #[schema(strings(display_name = "Time-based"))]
+    BySeconds {
+        #[schema(strings(
+            display_name = "Window size",
+            help = "Default uses an sliding window size equal to the algorithm adjustment period."
+        ))]
+        #[schema(flag = "real-time")]
+        #[schema(gui(slider(min = 0.5, max = 2., step = 0.1)), suffix = " seconds")]
+        sliding_window_secs: Option<f32>,
+    },
+    #[schema(strings(display_name = "Sample-based"))]
+    BySamples {
+        #[schema(strings(display_name = "Window size"))]
+        #[schema(flag = "real-time")]
+        #[schema(gui(slider(min = 32, max = 256, step = 1)), suffix = " samples")]
+        sliding_window_samp: usize,
+    },
+}
+
+#[derive(SettingsSchema, Serialize, Deserialize, Clone, PartialEq)]
+pub enum NestVrProfile {
+    Custom {
+        #[schema(strings(display_name = "Adjustment interval (tau)"))]
+        #[schema(flag = "real-time")]
+        #[schema(gui(slider(min = 0.1, max = 10.0, logarithmic)), suffix = " s")]
+        update_interval_nestvr_s: f32,
+
+        #[schema(strings(display_name = "Bitrate step count (N_s)"))]
+        #[schema(flag = "real-time")]
+        #[schema(gui(slider(min = 1, max = 100, step = 1, logarithmic)))]
+        bitrate_step_count: usize,
+
+        #[schema(strings(display_name = "Bitrate increase steps (N_up)"))]
+        #[schema(flag = "real-time")]
+        #[schema(gui(slider(min = 1, max = 100, step = 1, logarithmic)))]
+        bitrate_inc_steps: usize,
+
+        #[schema(strings(display_name = "Bitrate decrease steps (N_down)"))]
+        #[schema(flag = "real-time")]
+        #[schema(gui(slider(min = 1, max = 100, step = 1, logarithmic)))]
+        bitrate_dec_steps: usize,
+
+        #[schema(strings(display_name = "VF-RTT adjustment probability (gamma_rtt)"))]
+        #[schema(flag = "real-time")]
+        #[schema(gui(slider(min = 0.0, max = 1.0, logarithmic)))]
+        rtt_adj_prob: f32,
+
+        #[schema(strings(display_name = "Bitrate increase exploration probability (gamma_+)"))]
+        #[schema(flag = "real-time")]
+        #[schema(gui(slider(min = 0.0, max = 1.0, logarithmic)))]
+        bitrate_inc_prob: f32,
+
+        #[schema(strings(display_name = "NFR threshold (rho)"))]
+        #[schema(flag = "real-time")]
+        #[schema(gui(slider(min = 0.1, max = 1.0, logarithmic)))]
+        nfr_thresh: f32,
+
+        #[schema(strings(display_name = "VF-RTT threshold (sigma)"))]
+        #[schema(flag = "real-time")]
+        #[schema(gui(slider(min = 1., max = 200.0, logarithmic)), suffix = " ms")]
+        rtt_thresh_ms: f32,
+
+        #[schema(strings(display_name = "Estimated capacity scaling factor (m)"))]
+        #[schema(flag = "real-time")]
+        #[schema(gui(slider(min = 0.0, max = 1.0, logarithmic)))]
+        capacity_scaling_factor: f32,
+    },
+    Balanced,
+    Speedy,
+    Anxious,
+}
+
+#[derive(SettingsSchema, Serialize, Deserialize, Clone, PartialEq)]
 #[schema(gui = "button_group")]
 pub enum BitrateMode {
     #[schema(strings(display_name = "Constant"))]
@@ -297,63 +392,35 @@ pub enum BitrateMode {
         ))]
         #[schema(flag = "real-time")]
         decoder_latency_limiter: Switch<DecoderLatencyLimiter>,
+
+        #[schema(strings(
+            display_name = "Statistics history size",
+            help = "Controls the smoothness during calculations"
+        ))]
+        history_size: usize,
     },
-    #[schema(collapsible)]
     NestVr {
-        #[schema(strings(display_name = "Adjustment period (tau)"))]
+        #[schema(strings(display_name = "Statistics averaging strategy"))]
         #[schema(flag = "real-time")]
-        #[schema(gui(slider(min = 0.1, max = 10.0, logarithmic)), suffix = "s")]
-        update_interval_nestvr_s: f32,
+        averaging_strategy: AveragingStrategy,
 
         #[schema(strings(display_name = "Maximum bitrate (B_max)"))]
         #[schema(flag = "real-time")]
         #[schema(gui(slider(min = 1.0, max = 1000.0, logarithmic)), suffix = "Mbps")]
-        max_bitrate_mbps: Switch<f32>,
+        max_bitrate_mbps: f32,
+
         #[schema(strings(display_name = "Minimum bitrate (B_min)"))]
         #[schema(flag = "real-time")]
         #[schema(gui(slider(min = 1.0, max = 1000.0, logarithmic)), suffix = "Mbps")]
-        min_bitrate_mbps: Switch<f32>,
-        #[schema(strings(display_name = "Initial bitrate (B_0)"))]
+        min_bitrate_mbps: f32,
+
+        #[schema(strings(display_name = "Initial bitrate (B_init)"))]
         #[schema(gui(slider(min = 1.0, max = 1000.0, logarithmic)), suffix = "Mbps")]
         initial_bitrate_mbps: f32,
 
-        // #[schema(strings(display_name = "Step size (beta)"))]
-        // #[schema(flag = "real-time")]
-        // #[schema(gui(slider(min = 1.0, max = 100.0, logarithmic)), suffix = "Mbps")]
-        // step_size_mbps: f32,
-        #[schema(strings(display_name = "Estimated capacity scaling factor (m)"))]
+        #[schema(strings(display_name = "Profile"))]
         #[schema(flag = "real-time")]
-        #[schema(gui(slider(min = 0.0, max = 1.0, logarithmic)))]
-        capacity_scaling_factor: f32,
-
-        #[schema(strings(display_name = "VF-RTT exploration probability (gamma)"))]
-        #[schema(flag = "real-time")]
-        #[schema(gui(slider(min = 0.0, max = 1.0, logarithmic)))]
-        rtt_explor_prob: f32,
-
-        #[schema(strings(display_name = "NFR threshold (rho)"))]
-        #[schema(flag = "real-time")]
-        #[schema(gui(slider(min = 0.1, max = 1.0, logarithmic)))]
-        nfr_thresh: f32,
-
-        #[schema(strings(display_name = "VF-RTT threshold scaling factor (varsigma)"))]
-        #[schema(flag = "real-time")]
-        #[schema(gui(slider(min = 0.1, max = 5.0, logarithmic)))]
-        rtt_thresh_scaling_factor: f32,
-
-        #[schema(strings(display_name = "Bitrate ladder num of steps"))]
-        #[schema(flag = "real-time")]
-        #[schema(gui(slider(min = 0, max = 200, step = 1)))]
-        num_steps_bitrate_ladder: usize,
-
-        #[schema(strings(display_name = "Bitrate ladder steps to jump when increasing"))]
-        #[schema(flag = "real-time")]
-        #[schema(gui(slider(min = 0, max = 50, step = 1)))]
-        mulitplier_bitrate_increase: usize,
-        #[schema(strings(display_name = "Bitrate ladder steps to jump when decreasing"))]
-        #[schema(flag = "real-time")]
-        #[schema(gui(slider(min = 0, max = 50, step = 1)))]
-        multiplier_bitrate_decrease: usize,
+        nest_vr_profile: NestVrProfile,
     },
 }
 
@@ -373,12 +440,6 @@ pub struct BitrateAdaptiveFramerateConfig {
 pub struct BitrateConfig {
     #[schema(flag = "real-time")]
     pub mode: BitrateMode,
-
-    #[schema(strings(
-        display_name = "Sliding window size (n)",
-        help = "Controls the smoothness during calculations"
-    ))]
-    pub history_size: usize,
 
     #[schema(strings(
         help = "Ensure that the specified bitrate value is respected regardless of the framerate"
@@ -1262,38 +1323,54 @@ pub fn session_settings_default() -> SettingsDefault {
                                 latency_overstep_multiplier: 0.99,
                             },
                         },
+                        history_size: 256,
                     },
                     NestVr: BitrateModeNestVrDefault {
-                        gui_collapsed: false,
-
-                        update_interval_nestvr_s: 1.0,
-
-                        max_bitrate_mbps: SwitchDefault {
-                            enabled: true,
-                            content: 100.0,
+                        averaging_strategy: AveragingStrategyDefault {
+                            SimpleWindowAverage: AveragingStrategySimpleWindowAverageDefault {
+                                window_type: WindowTypeDefault {
+                                    BySeconds: WindowTypeBySecondsDefault {
+                                        sliding_window_secs: OptionalDefault {
+                                            set: false,
+                                            content: 1.,
+                                        },
+                                    },
+                                    BySamples: WindowTypeBySamplesDefault {
+                                        sliding_window_samp: 256,
+                                    },
+                                    variant: WindowTypeDefaultVariant::BySeconds,
+                                },
+                            },
+                            ExponentialMovingAverage:
+                                AveragingStrategyExponentialMovingAverageDefault {
+                                    ewma_weight: 0.2,
+                                },
+                            variant: AveragingStrategyDefaultVariant::SimpleWindowAverage,
                         },
-                        min_bitrate_mbps: SwitchDefault {
-                            enabled: true,
-                            content: 10.0,
+                        max_bitrate_mbps: 100.0,
+                        min_bitrate_mbps: 10.0,
+                        initial_bitrate_mbps: 100.0,
+                        nest_vr_profile: NestVrProfileDefault {
+                            Custom: NestVrProfileCustomDefault {
+                                update_interval_nestvr_s: 1.0,
+
+                                bitrate_step_count: 9,
+                                bitrate_inc_steps: 1,
+                                bitrate_dec_steps: 1,
+
+                                rtt_adj_prob: 1.0,
+                                bitrate_inc_prob: 0.25,
+
+                                nfr_thresh: 0.99,
+                                rtt_thresh_ms: 22.,
+
+                                capacity_scaling_factor: 0.9,
+                            },
+                            variant: NestVrProfileDefaultVariant::Custom,
                         },
-                        initial_bitrate_mbps: 30.0,
-
-                        // step_size_mbps: 10.0,
-                        capacity_scaling_factor: 0.9,
-
-                        rtt_explor_prob: 0.25,
-
-                        nfr_thresh: 0.95,
-
-                        rtt_thresh_scaling_factor: 2.0,
-
-                        num_steps_bitrate_ladder: 10,
-                        mulitplier_bitrate_increase: 1,
-                        multiplier_bitrate_decrease: 1,
                     },
                     variant: BitrateModeDefaultVariant::NestVr,
                 },
-                history_size: 256,
                 adapt_to_framerate: SwitchDefault {
                     enabled: false,
                     content: BitrateAdaptiveFramerateConfigDefault {

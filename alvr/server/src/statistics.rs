@@ -72,6 +72,9 @@ pub struct StatisticsManager {
     video_bytes_total: usize,
     video_bytes_partial_sum: usize,
 
+    video_shards_sent_partial_sum: isize,
+    video_shards_lost_partial_sum: isize,
+
     received_video_bytes_partial_sum: f32,
 
     frame_interarrival_partial_sum: f32,
@@ -144,6 +147,10 @@ impl StatisticsManager {
             video_bytes_total: 0,
             video_bytes_partial_sum: 0,
 
+            video_shards_sent_partial_sum: 0,
+
+            video_shards_lost_partial_sum: 0,
+
             received_video_bytes_partial_sum: 0.,
 
             frame_interarrival_partial_sum: 0.,
@@ -161,32 +168,80 @@ impl StatisticsManager {
 
             total_pipeline_latency_average: SlidingWindowAverage::new(
                 Duration::ZERO,
-                max_history_size,
+                Some(max_history_size),
+                None,
+                None,
             ),
-            game_delay_average: SlidingWindowAverage::new(Duration::ZERO, max_history_size),
-            server_compositor_average: SlidingWindowAverage::new(Duration::ZERO, max_history_size),
-            encode_delay_average: SlidingWindowAverage::new(Duration::ZERO, max_history_size),
-            network_delay_average: SlidingWindowAverage::new(Duration::ZERO, max_history_size),
-            decode_delay_average: SlidingWindowAverage::new(Duration::ZERO, max_history_size),
+            game_delay_average: SlidingWindowAverage::new(
+                Duration::ZERO,
+                Some(max_history_size),
+                None,
+                None,
+            ),
+            server_compositor_average: SlidingWindowAverage::new(
+                Duration::ZERO,
+                Some(max_history_size),
+                None,
+                None,
+            ),
+            encode_delay_average: SlidingWindowAverage::new(
+                Duration::ZERO,
+                Some(max_history_size),
+                None,
+                None,
+            ),
+            network_delay_average: SlidingWindowAverage::new(
+                Duration::ZERO,
+                Some(max_history_size),
+                None,
+                None,
+            ),
+            decode_delay_average: SlidingWindowAverage::new(
+                Duration::ZERO,
+                Some(max_history_size),
+                None,
+                None,
+            ),
             decoder_queue_delay_average: SlidingWindowAverage::new(
                 Duration::ZERO,
-                max_history_size,
+                Some(max_history_size),
+                None,
+                None,
             ),
-            client_compositor_average: SlidingWindowAverage::new(Duration::ZERO, max_history_size),
-            vsync_queue_delay_average: SlidingWindowAverage::new(Duration::ZERO, max_history_size),
+            client_compositor_average: SlidingWindowAverage::new(
+                Duration::ZERO,
+                Some(max_history_size),
+                None,
+                None,
+            ),
+            vsync_queue_delay_average: SlidingWindowAverage::new(
+                Duration::ZERO,
+                Some(max_history_size),
+                None,
+                None,
+            ),
 
             frame_interval: nominal_server_frame_interval,
 
             frame_interval_average: SlidingWindowAverage::new(
                 Duration::from_millis(16),
-                max_history_size,
+                Some(max_history_size),
+                None,
+                None,
             ),
             client_frame_interval_average: SlidingWindowAverage::new(
                 Duration::from_millis(16),
-                max_history_size,
+                Some(max_history_size),
+                None,
+                None,
             ),
 
-            frame_interarrival_average: SlidingWindowAverage::new(0., max_history_size),
+            frame_interarrival_average: SlidingWindowAverage::new(
+                0.,
+                Some(max_history_size),
+                None,
+                None,
+            ),
 
             server_frames_moving: SlidingWindowTimely::new(60., 16., 1.),
             client_frames_moving: SlidingWindowTimely::new(60., 16., 1.),
@@ -398,6 +453,9 @@ impl StatisticsManager {
 
         shards_lost = shards_sent as isize - network_stats.rx_shard_counter as isize;
 
+        self.video_shards_sent_partial_sum += shards_sent as isize;
+        self.video_shards_lost_partial_sum += shards_lost;
+
         self.prev_highest_frame = network_stats.highest_rx_frame_index as i32;
         self.prev_highest_shard = network_stats.highest_rx_shard_index as i32;
 
@@ -448,6 +506,7 @@ impl StatisticsManager {
 
             shards_lost: shards_lost,
             shards_duplicated: network_stats.duplicated_shard_counter,
+            shards_sent: shards_sent as u32,
 
             instant_network_throughput_bps: instant_network_throughput_bps,
             peak_network_throughput_bps: peak_network_throughput_bps,
@@ -466,6 +525,12 @@ impl StatisticsManager {
             let interval_secs = now
                 .saturating_duration_since(self.last_full_report_instant)
                 .as_secs_f32();
+            let shard_loss_rate = if self.video_shards_sent_partial_sum == 0 {
+                0.0
+            } else {
+                self.video_shards_lost_partial_sum as f32
+                    / self.video_shards_sent_partial_sum as f32
+            };
 
             alvr_events::send_event(EventType::StatisticsSummary(StatisticsSummary {
                 video_packets_total: self.video_packets_total,
@@ -518,6 +583,8 @@ impl StatisticsManager {
                 packets_skipped_per_sec: (self.packets_skipped_partial_sum as f32 / interval_secs)
                     as _,
 
+                shard_loss_rate: shard_loss_rate,
+
                 frame_jitter_ms: self.frame_interarrival_average.get_std() * 1000.0,
 
                 client_fps: 1.0
@@ -556,6 +623,10 @@ impl StatisticsManager {
             self.frame_interarrival_partial_sum = 0.;
 
             self.packets_dropped_partial_sum = 0;
+            self.packets_skipped_partial_sum = 0;
+
+            self.video_shards_sent_partial_sum = 0;
+            self.video_shards_lost_partial_sum = 0;
 
             self.last_full_report_instant = now;
         }
@@ -647,7 +718,6 @@ impl StatisticsManager {
             // timestamp as the graph time origin.
             alvr_events::send_event(EventType::GraphStatistics(GraphStatistics {
                 frame_index: client_stats.frame_index, // added
-                is_idr: frame.is_idr,                  // added
 
                 frames_dropped: client_stats.frames_dropped, // added
 

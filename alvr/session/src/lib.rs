@@ -1,5 +1,7 @@
+mod nestvr_profiles;
 mod settings;
 
+pub use nestvr_profiles::*;
 pub use settings::*;
 pub use settings_schema;
 

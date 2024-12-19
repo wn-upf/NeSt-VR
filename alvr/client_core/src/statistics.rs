@@ -38,7 +38,9 @@ impl StatisticsManager {
             prev_vsync: Instant::now(),
             total_pipeline_latency_average: SlidingWindowAverage::new(
                 Duration::ZERO,
-                max_history_size,
+                Some(max_history_size),
+                None,
+                None,
             ),
             steamvr_pipeline_latency: Duration::from_secs_f32(
                 steamvr_pipeline_frames * nominal_server_frame_interval.as_secs_f32(),

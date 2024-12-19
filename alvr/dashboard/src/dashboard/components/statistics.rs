@@ -745,6 +745,9 @@ impl StatisticsTab {
                 statistics.packets_skipped_total, statistics.packets_skipped_per_sec
             ));
 
+            ui[0].label("Shard loss:");
+            ui[1].label(&format!("{} %", statistics.shard_loss_rate * 100.));
+
             ui[0].label("Client FPS:");
             ui[1].label(&format!("{} FPS", statistics.client_fps));
 
