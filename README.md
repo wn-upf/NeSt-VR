@@ -1,8 +1,8 @@
 
 
-# ALVR - Air Light VR - Wireless Networking UPF
+# ALVR - Air Light VR - NeSt-VR extension 
 
-This **fork of [ALVR v20.6.0](https://github.com/alvr-org/ALVR)** introduces several enhancements to ALVR for monitoring and optimizing VR streaming performance. 
+This **fork of [ALVR v20.6.0](https://github.com/alvr-org/ALVR)** introduces several enhancements to ALVR for monitoring and optimizing VR streaming performance. From Wireless Networking research group at UPF to be used as a performance monitoring tool and Adaptive BitRate (ABR) testbed for VR streaming.  
 
 In particular, our project integrates **additional metrics** to characterize the network state during streaming, providing insights into video frame (VF) delivery and network performance. Our metrics are logged in the `session_log.txt` file when the `Log to disk` setting is enabled and are also displayed in real time on the `Statistics` tab of the ALVR dashboard:
 
