@@ -1,25 +1,24 @@
 
 
-# ALVR - Air Light VR - Wireless Networking UPF
-
-This **fork of [ALVR v20.6.0](https://github.com/alvr-org/ALVR)** introduces several enhancements to ALVR for monitoring and optimizing VR streaming performance. 
+# NeSt-VR 
+This **fork of [ALVR v20.6.0](https://github.com/alvr-org/ALVR)** introduces several extensions to ALVR, made by the Wireless Networking research group at UPF, to be used as a performance monitoring tool and Adaptive BitRate (ABR) testbed for VR streaming.  
 
 In particular, our project integrates **additional metrics** to characterize the network state during streaming, providing insights into video frame (VF) delivery and network performance. Our metrics are logged in the `session_log.txt` file when the `Log to disk` setting is enabled and are also displayed in real time on the `Statistics` tab of the ALVR dashboard:
 
 <table style="width:100%; text-align:center;">
   <tr>
-    <td><img src="./images/metrics_dashboard_1.png" alt="dashboard" width="150"/></td>
-    <td><img src="./images/metrics_dashboard_2.png" alt="dashboard" width="150"/></td>
+    <td><img src="./images/metrics_dashboard_1.png" alt="dashboard" width="300"/></td>
+    <td><img src="./images/metrics_dashboard_2.png" alt="dashboard" width="300"/></td>
   </tr>
 </table>
 
 Our project also implements the **Network-aware Step-wise ABR algorithm (NeSt-VR)**, an Adaptive BitRate (ABR) algorithm designed to optimize streaming quality based on real-time network conditions. 
 
 <div style="text-align: center;">
-  <img src="./images/MaxR-video-July.gif" alt="nest_vr" width="300"/>
+  <img src="./images/MaxR-video-July.gif" alt="nest_vr" width="450"/>
 </div>
 
-This algorithm is implemented as a new bitrate mode in ALVR, named `NeSt vr`:
+This algorithm is integrated as a new bitrate mode in the ALVR dashboard, named `NeSt vr`:
 
 <div style="text-align:center">
 <img src="./images/Settings_NeST-VR.png" alt="nestvr_settings" width="300"/>
@@ -52,8 +51,7 @@ the reception of the last packet of a VF and the last packet of the previous rec
 ### Data rate metrics 
 * **Instantaneous video network throughput** (`instant_network_throughput_bps` in `GraphNetworkStatistics`): rate at which video data is received by the client, measured in the interval between two VFs receptions
 
-* **Peak network throughput** (`peak_network_throughput_bps` in `GraphNetworkStatistics`): ratio between the VF’s size and its client-side frame span, used in NeSt-VR to estimate the network capacity
-
+* **Peak network throughput** (`peak_network_throughput_bps` in `GraphNetworkStatistics`): ratio between the VF’s size and its client-side frame span. Given a high bitrate and its subsequent bursty throughput, it can be seen as a discrete measure of network bandwidth, which we filter into $C_{\text{NeSt-VR}}$ and use as threshold for selectable bitrates to NeSt-VR. 
 ### Network Stability metrics
 * **VF jitter** (`frame_jitter_ms` in `GraphNetworkStatistics`): variation in VF time deliveries, computed as the sample standard deviation of frame inter-arrival times 
 
@@ -68,7 +66,7 @@ NeSt-VR applies a hierarchical decision-making process, operating every $\tau$ s
 
 
 <div style="text-align:center">
-<img src="./images/stepwise-abr-nest.png" alt="nestvr" width="300"/>
+<img src="./images/stepwise-abr-nest.png" alt="nestvr" width="400"/>
 </div>
 
 > **Note:** NFR is computed as `fps_rx / fps_tx`, where `fps_rx` denotes the average frame delivery rate and `fps_tx` denotes the average frame transmission rate (`network_heur_fps` and `server_fps`, respectively, in `HeuristicStats`)
