@@ -70,7 +70,7 @@ NeSt-VR uses the Network Frame Ratio (NFR) and VF-RTT —averaged over an $n$-sa
 
 
 <div style="text-align:center">
-<img src="./images/stepwise-abr-nest.png" alt="nestvr" width="300"/>
+<img src="./images/stepwise-abr-nest.png" alt="nestvr" width="400"/>
 </div>
 
 > **Note:** NFR is computed as `fps_rx / fps_tx`, where `fps_rx` denotes the average frame delivery rate and `fps_tx` denotes the average frame transmission rate (`network_heur_fps` and `server_fps`, respectively, in `HeuristicStats`)
