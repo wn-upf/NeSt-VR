@@ -2,7 +2,7 @@
 
 # NeSt-VR 
 
-This **fork of [ALVR v20.6.0](https://github.com/alvr-org/ALVR)** introduces several extensions to ALVR, made by the Wireless Networking research group at UPF, to be used as a performance monitoring tool and Adaptive BitRate (ABR) testbed for VR streaming.  
+This **fork of [ALVR v20.6.0](https://github.com/alvr-org/ALVR)**, developed by the Wireless Networking Research Group at UPF, introduces several extensions to ALVR for monitoring VR streaming performance and developing informed Adaptive BitRate (ABR) algorithms.  
 
 In particular, our project integrates **additional metrics** to characterize the network state during streaming, providing insights into video frame (VF) delivery and network performance. Our metrics are logged in the `session_log.txt` file when the `Log to disk` setting is enabled, and are displayed in real time on the `Statistics` tab of the ALVR dashboard:
 
@@ -13,14 +13,13 @@ In particular, our project integrates **additional metrics** to characterize the
   </tr>
 </table>
 
-Our project also implements the **Network-awar
-e Step-wise ABR algorithm (NeSt-VR)**, an Adaptive BitRate (ABR) algorithm designed to optimize streaming quality based on real-time network conditions. 
+Our project also implements the **Network-aware Step-wise ABR algorithm (NeSt-VR)**, an ABR algorithm designed to optimize streaming quality based on real-time network conditions. 
 
 <div style="text-align: center;">
   <img src="./images/MaxR-video-July.gif" alt="nest_vr" width="450"/>
 </div>
 
-This algorithm is implemented as a new bitrate mode in ALVR, named `NeSt vr`:
+This algorithm is implemented as a new bitrate mode in ALVR, named `Nest vr`:
 
 <div style="text-align:center">
 <img src="./images/Settings_NeST-VR.png" alt="nestvr_settings" width="300"/>
@@ -53,7 +52,7 @@ the reception of the last packet of a VF and the last packet of the previous rec
 ### Data rate metrics 
 * **Instantaneous video network throughput** (`instant_network_throughput_bps` in `GraphNetworkStatistics`): rate at which video data is received by the client, measured in the interval between two VFs receptions
 
-* **Peak network throughput** (`peak_network_throughput_bps` in `GraphNetworkStatistics`): ratio between the VF’s size and its client-side frame span. Given a high bitrate and its subsequent bursty throughput, it can be seen as a discrete measure of network bandwidth, which we filter into $C_{\text{NeSt-VR}}$ and use as threshold for selectable bitrates to NeSt-VR. 
+* **Peak network throughput** (`peak_network_throughput_bps` in `GraphNetworkStatistics`): ratio between the VF’s size and its client-side frame span. It serves as a discrete estimate of network bandwidth since ALVR sends each VF in a single burst
 
 ### Network Stability metrics
 * **VF jitter** (`frame_jitter_ms` in `GraphNetworkStatistics`): variation in VF time deliveries, computed as the sample standard deviation of frame inter-arrival times 
@@ -66,7 +65,7 @@ as described in ["Analysis and design of the google congestion control for web r
 ## NeSt-VR overview
 
 NeSt-VR applies a hierarchical decision-making process, operating every $\tau$ seconds and progressively adjusting the target bitrate ($B_v$) —initially set to ($B_0$) Mbps— in $\beta$ Mbps steps to avoid significant video quality shifts that may disrupt user Quality of Experience. 
-NeSt-VR uses the Network Frame Ratio (NFR) and VF-RTT —averaged over an $n$-sample sliding window ($\overline{\;\centerdot\;}$)— as inputs, adjusting the bitrate if their values surpass configurable thresholds ($\rho$ and $\sigma$, respectively). The range of selectable bitrates is always between the maximum and minimum bitrate limits ($B_{\max}$ and $B_{\min}$), and changes are upper bounded by $m \cdot C_{\text{NeSt-VR}}$ —with $m \leq 1$— to ensure bitrate stays below our estimated network capacity ($C_{\text{NeSt-VR}}$):
+NeSt-VR uses the Network Frame Ratio (NFR) and VF-RTT —averaged over an $n$-sample sliding window ($\overline{\centerdot}$)— as inputs, adjusting the bitrate if their values surpass configurable thresholds ($\rho$ and $\sigma$, respectively). The range of selectable bitrates is always between the maximum and minimum bitrate limits ($B_{\max}$ and $B_{\min}$), and changes are upper bounded by $m \cdot C_{\text{NeSt-VR}}$ —with $m \leq 1$— to ensure bitrate stays below our estimated network capacity ($C_{\text{NeSt-VR}}$):
 
 
 <div style="text-align:center">
