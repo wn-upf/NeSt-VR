@@ -1,7 +1,7 @@
 
 
 # NeSt-VR 
-This **fork of [ALVR v20.6.0](https://github.com/alvr-org/ALVR)** introduces several extensions to ALVR, made by the Wireless Networking research group at UPF, to be used as a performance monitoring tool and Adaptive BitRate (ABR) testbed for VR streaming.  
+This **fork of [ALVR v20.6.0](https://github.com/alvr-org/ALVR)**, developed by the Wireless Networking Research Group at UPF, introduces several extensions to ALVR for monitoring VR streaming performance and developing informed Adaptive BitRate (ABR) algorithms.
 
 In particular, our project integrates **additional metrics** to characterize the network state during streaming, providing insights into video frame (VF) delivery and network performance. Our metrics are logged in the `session_log.txt` file when the `Log to disk` setting is enabled and are also displayed in real time on the `Statistics` tab of the ALVR dashboard:
 
@@ -12,16 +12,16 @@ In particular, our project integrates **additional metrics** to characterize the
   </tr>
 </table>
 
-Our project also implements the **Network-aware Step-wise ABR algorithm (NeSt-VR)**, an Adaptive BitRate (ABR) algorithm designed to optimize streaming quality based on real-time network conditions. 
+Our project also implements the **Network-aware Step-wise ABR algorithm (NeSt-VR)**, an ABR algorithm designed to optimize streaming quality based on real-time network conditions. 
 
 <div style="text-align: center;">
   <img src="./images/MaxR-video-July.gif" alt="nest_vr" width="450"/>
 </div>
 
-This algorithm is integrated as a new bitrate mode in the ALVR dashboard, named `NeSt vr`:
+This algorithm is integrated as a new bitrate mode in the ALVR dashboard, named `Nest vr`:
 
 <div style="text-align:center">
-<img src="./images/Settings_NeST-VR.png" alt="nestvr_settings" width="300"/>
+<img src="./images/Settings_NeSt-VR_v2.png" alt="nestvr_settings" width="300"/>
 </div>
 
 For a comprehensive validation of several metrics and a detailed introduction and evaluation of the NeSt-VR algorithm, please refer to our paper:  **["Experimenting with Adaptive Bitrate Algorithms for Virtual Reality Streaming over Wi-Fi"](https://arxiv.org/abs/2407.15614)**.
@@ -51,7 +51,7 @@ the reception of the last packet of a VF and the last packet of the previous rec
 ### Data rate metrics 
 * **Instantaneous video network throughput** (`instant_network_throughput_bps` in `GraphNetworkStatistics`): rate at which video data is received by the client, measured in the interval between two VFs receptions
 
-* **Peak network throughput** (`peak_network_throughput_bps` in `GraphNetworkStatistics`): ratio between the VF’s size and its client-side frame span. Given a high bitrate and its subsequent bursty throughput, it can be seen as a discrete measure of network bandwidth, which we filter into $C_{\text{NeSt-VR}}$ and use as threshold for selectable bitrates to NeSt-VR. 
+* **Peak network throughput** (`peak_network_throughput_bps` in `GraphNetworkStatistics`): ratio between the VF’s size and its client-side frame span. It serves as a discrete estimate of network bandwidth since ALVR sends each VF in a single burst
 ### Network Stability metrics
 * **VF jitter** (`frame_jitter_ms` in `GraphNetworkStatistics`): variation in VF time deliveries, computed as the sample standard deviation of frame inter-arrival times 
 
@@ -62,32 +62,51 @@ as described in ["Analysis and design of the google congestion control for web r
 
 ## NeSt-VR overview
 
-NeSt-VR applies a hierarchical decision-making process, operating every $\tau$ seconds and progressively adjusting the target bitrate ($B_v$) —initially set to ($B_0$) Mbps— in $\beta$ Mbps steps to avoid significant video quality shifts that may disrupt the user’s QoE. NeSt-VR uses the Network Frame Ratio (NFR) and VF-RTT —averaged over an $n$-sample sliding window ($\overline{\;\centerdot\;}$)— as inputs, adjusting the bitrate if their values surpass configurable thresholds ($\rho$ and $\sigma$, respectively). The target bitrate is also constrained within the configured maximum and minimum bitrate limits ($B_{\max}$ and $B_{\min}$) and is further upper bounded by $m \cdot C_{\text{NeSt-VR}}$ —with $m \leq 1$— to  ensure the bitrate remains under our estimated network capacity ($C_{\text{NeSt-VR}}$):
+NeSt-VR operates every $\tau$ seconds, progressively adjusting the target bitrate ($B_k \in \mathcal{B}$) —initially set to $B_{init}$ Mbps— in discrete steps of size $\Delta B$ to avoid significant video quality shifts that may disrupt the user’s QoE. The set of available target bitrates ($\mathcal{B}$) depends on the configured minimum bitrate ($B_{\min}$), maximum bitrate ($B_{\max}$), and the number of steps between them ($N_{\text{s}}\in \mathbb{Z}^+$).
+
+At each adjustment period $k\in \mathbb{Z}^+$, occurring at time $T=k\cdot\tau$, NeSt-VR computes the average Network Frame Ratio (NFR) and average VF-RTT —averaged over either a sliding window of $n$ samples, a sliding window of $t$ seconds ($t$ defaults to $\tau$), or an exponentially weighted moving average (EWMA) with weight $\omega$— and applies a hierarchical decision-making process:
+
+* If the average NFR is below its threshold $\rho$, the target bitrate is reduced in $N_{\text{dw}}\in \mathbb{Z}^+$ steps
+* If both the average NFR and average VF-RTT surpass their thresholds ($\rho$ and $\sigma$, respectively), with a probability of $\gamma_{\text{rtt}}$, the bitrate is reduced in $N_{\text{dw}}\in \mathbb{Z}^+$ steps; otherwise, it remains consistent
+* If the average NFR exceeds $\rho$ and the average VF-RTT is below its threshold $\sigma$, with probability $\gamma_{\text{+}}$, the bitrate is increased in $N_{\text{up}}\in \mathbb{Z}^+$ steps; otherwise, it remains consistent
+* Finally, to ensure the bitrate does not exceed the network’s capacity, the target bitrate is upper-bounded by $m \cdot C_{\text{NeSt-VR}}$, with $m \leq 1$. Here, $C_{\text{NeSt-VR}}$ denotes NeSt-VR’s estimated network capacity, computed as the average of the peak network throughput
 
 
 <div style="text-align:center">
-<img src="./images/stepwise-abr-nest.png" alt="nestvr" width="400"/>
+<img src="./images/NeSt-VR_algorithm.png" alt="NeSt-VR Algorithm" width="300"/>
 </div>
 
-> **Note:** NFR is computed as `fps_rx / fps_tx`, where `fps_rx` denotes the average frame delivery rate and `fps_tx` denotes the average frame transmission rate (`network_heur_fps` and `server_fps`, respectively, in `HeuristicStats`)
+> **Note:** NFR is computed as $fps_{rx} / fps_{tx}$, where $fps_{rx}$ denotes the frame delivery rate and $fps_{tx}$ denotes the frame transmission rate
 
-> **Note:** $\sigma$ is computed as $\varsigma/{\overline{\Delta_{\rm tx}}}$. $\varsigma$ is a configurable parameter and $\overline{\Delta_{\rm tx}}$ denotes the average interval between consecutive VFs transmissions
+> **Note:** $\gamma_{\text{rtt}}$ moderates the frequency of bitrate reductions in response to a high average VF-RTTs, particularly when frame delivery rates are acceptable, thereby giving greater weight to NFR over VF-RTT in bitrate adaptation decisions
 
-> **Note:** $\gamma$ serves as a configurable exploration parameter to assess whether higher bitrates can be sustained and moderating the frequency of bitrate adjustments due to high VF-RTTs
+> **Note:** $\gamma_{\text{+}}$ serves as an exploration parameter to assess whether higher bitrates can be sustained without compromising the user’s QoE
 
-> **Note:** `HeuristicStats` event is logged at each NeSt-VR adjustment period, including the considered step size ($\beta$: `steps_bps`), the average interval between consecutive VFs transmissions ($\overline{\Delta_{\rm tx}}$: `frame_interval_s`), the considered ($\overline{\text{NFR}}$: `network_heur_fps`), the considered ($\overline{\text{VF-RTT}}$: `rtt_avg_heur_s`), the considered threshold for NFR ($\rho$: `threshold_fps`), the considered threshold for VF-RTT ($\sigma$: `threshold_rtt_s`), the random value drawn from a uniform distribution in the interval [0, 1] (`threshold_u`), and the requested target bitrate ($B_{\text{v}}$: `requested_bitrate_bps`)
-
-NeSt-VR configurable parameters are outlined in the following table:
-
+NeSt-VR configurable parameters are summarized in the following table:
 |        | |                        |   |
-|-------------------|--------|-----------|---------|
-| Adjustment Period | $\tau$ | Step Size | $\beta$ |
-| Sliding Window Size | $n$    | Estimated Capacity Scaling Factor | $m$     |
-| Minimum Bitrate    | $B_{\min}$ | VF-RTT Exploration Probability | $\gamma$ |
-| Maximum Bitrate    | $B_{\max}$ | NFR Threshold | $\rho$   |
-| Initial Bitrate    | $B_{0}$ | VF-RTT Threshold Scaling Factor | $\varsigma$ |
+|-------------------------|--------|-------------------|------------------|
+| Adjustment interval (s) | $\tau$ | Averaging param.| $n$/$t$/$\omega$ |
+| Est. capacity multiplier | $m$    | min, max Bitrate  | $B_{\min}$, $B_{\max}$ |
+| VF-RTT thresh. (ms)     | $\sigma$ | initial Bitrate   | $B_{\text{init}}$  |
+| NFR thresh.             | $\rho$ | Bitrate steps count | $N_{\text{s}}$ |
+| VF-RTT adj. prob.       | $\gamma_{\text{rtt}}$ | Bitrate inc. steps | $N_{\text{up}}$ |
+| Bitrate inc. explor. prob. | $\gamma_{\text{+}}$ | Bitrate dec. steps | $N_{\text{dw}}$ |
 |        | |                        |   |
 
+Our parameter recommendations are outlined in the following table:
+
+|        | |                        |   | |                        |
+|--------|------|-----------|-----|---------|------|
+| $\tau$ | 1    | $\sigma$  | 22  | $\rho$  | 0.99 |
+| $t$    | 1    | $\gamma_{\text{rtt}}$ | 1   | $\gamma_{\text{+}}$ | 0.25 |
+| $m$    | 0.9  | $N_{\text{s}}$ | 9   | $N_{\text{up}}$ | 1   |
+|        | |                        |   | |                        |
+ 
+Note that parameters such as $B_{\text{min}}, B_{\text{max}}, B_{\text{init}}$ depend on the quality requirements of the target application.
+
+Our predefined profiles include the *Balanced* profile (consistent increase and decrease adjustments: $N_{\text{dw}} = N_{\text{up}}$), the *Speedy* profile (faster bitrate reductions: $N_{\text{dw}} = 2N_{\text{up}}$), and the *Anxious* profile (bitrate drops to the minimum: $N_{\text{dw}} = N_{\text{s}}$). These profiles integrate our parameter recommendations and can be selected based on the desired responsiveness to network fluctuations
+
+An `HeuristicStats` event is logged in the `session_log.txt` file at each NeSt-VR adjustment period. This event includes several decision-making process-related statistics for that period, such as the considered bitrate step size $\Delta B$ (`bitrate_step_size_bps`), sampled values from uniform distributions for bitrate increase probability $r_+$ (`r_inc`) and VF-RTT adjustment probability $r_{\text{rtt}}$ (`r_rtt`), the computed average frame delivery rate $fps_{rx}$ (`fps_rx_avg`) and average frame transmission rate $fps_{tx}$ (`fps_tx_avg`), the computed average NFR (`nfr_avg`), the computed average VF-RTT (`rtt_avg_ms`), and the requested bitrate $B_k$ (`requested_bitrate_bps`), among others.
 
 ## How to build
 
