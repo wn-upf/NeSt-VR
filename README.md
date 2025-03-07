@@ -9,10 +9,10 @@ Our contributions include the implementation of a VR-tailored Adaptive BitRate (
   <img src="./images/MaxR-video-July.gif" alt="nest_vr" width="450"/>
 </div>
 
-This algorithm is implemented as a new bitrate mode in ALVR, named `Nest vr`:
+This algorithm is implemented as a new bitrate mode in the ALVR dashboard, named `Nest vr`:
 
 <div style="text-align:center">
-<img src="./images/Settings_NeST-VR.png" alt="nestvr_settings" width="300"/>
+<img src="./images/Settings_NeSt-VR_v2.png" alt="nestvr_settings" width="450"/>
 </div>
 
 Additionally, we have integrated **additional metrics** that characterize the network state during streaming, providing insights into video frame (VF) delivery and overall network performance. These metrics are logged in the `session_log.txt` file when the `Log to disk` setting is enabled, and are displayed in real time on the `Statistics` tab of the ALVR dashboard:
