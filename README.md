@@ -1,9 +1,21 @@
 
 
 # NeSt-VR 
-This **fork of [ALVR v20.6.0](https://github.com/alvr-org/ALVR)**, developed by the Wireless Networking Research Group at UPF, introduces several extensions to ALVR for monitoring VR streaming performance and developing informed Adaptive BitRate (ABR) algorithms.
+This is a **fork of [ALVR v20.6.0](https://github.com/alvr-org/ALVR)**, a solution that enables streaming VR games over Wi-Fi.  The **UPF Wireless Networking Research Group** has extended ALVR by introducing several features designed for VR streaming performance monitoring and optimization. 
 
-In particular, our project integrates **additional metrics** to characterize the network state during streaming, providing insights into video frame (VF) delivery and network performance. Our metrics are logged in the `session_log.txt` file when the `Log to disk` setting is enabled and are also displayed in real time on the `Statistics` tab of the ALVR dashboard:
+Our contributions include the implementation of a VR-tailored Adaptive BitRate (ABR) algorithm, called the **Network-aware Step-wise ABR algorithm (NeSt-VR)**, which optimizes streaming quality based on real-time network conditions: 
+
+<div style="text-align: center;">
+  <img src="./images/MaxR-video-July.gif" alt="nest_vr" width="450"/>
+</div>
+
+This algorithm is implemented as a new bitrate mode in ALVR, named `Nest vr`:
+
+<div style="text-align:center">
+<img src="./images/Settings_NeST-VR.png" alt="nestvr_settings" width="300"/>
+</div>
+
+Additionally, we have integrated **additional metrics** that characterize the network state during streaming, providing insights into video frame (VF) delivery and overall network performance. These metrics are logged in the `session_log.txt` file when the `Log to disk` setting is enabled, and are displayed in real time on the `Statistics` tab of the ALVR dashboard:
 
 <table style="width:100%; text-align:center;">
   <tr>
@@ -12,19 +24,7 @@ In particular, our project integrates **additional metrics** to characterize the
   </tr>
 </table>
 
-Our project also implements the **Network-aware Step-wise ABR algorithm (NeSt-VR)**, an ABR algorithm designed to optimize streaming quality based on real-time network conditions. 
-
-<div style="text-align: center;">
-  <img src="./images/MaxR-video-July.gif" alt="nest_vr" width="450"/>
-</div>
-
-This algorithm is integrated as a new bitrate mode in the ALVR dashboard, named `Nest vr`:
-
-<div style="text-align:center">
-<img src="./images/Settings_NeSt-VR_v2.png" alt="nestvr_settings" width="300"/>
-</div>
-
-For a comprehensive validation of several metrics and a detailed introduction and evaluation of the NeSt-VR algorithm, please refer to our paper:  **["Experimenting with Adaptive Bitrate Algorithms for Virtual Reality Streaming over Wi-Fi"](https://arxiv.org/abs/2407.15614)**.
+For a comprehensive validation of several metrics and a detailed introduction and evaluation of the NeSt-VR algorithm, please refer to our paper:  **["NeSt-VR: An Adaptive Bitrate Algorithm for Virtual Reality Streaming over Wi-Fi"]([https://arxiv.org/abs/2407.15614](https://arxiv.org/abs/2502.14947))**.
 
 ## Added metrics overview 
 
