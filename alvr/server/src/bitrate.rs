@@ -1,12 +1,12 @@
 use crate::FfiDynamicEncoderParams;
 use alvr_common::SlidingWindowAverage;
 use alvr_events::{EventType, HeuristicStats, NominalBitrateStats};
-use alvr_session::GccBandwidthEstimator;
+use alvr_common::{GccBandwidthEstimator, NadaSender};
 use alvr_session::{
     get_profile_config, settings_schema::Switch, AveragingStrategy, BitrateAdaptiveFramerateConfig,
     BitrateConfig, BitrateMode, WindowType,
 };
-use alvr_packets::NetworkStatisticsPacket; 
+use alvr_packets::{NetworkStatisticsPacket, EverestCommand, }; 
 use rand::distributions::Uniform;
 use rand::{thread_rng, Rng};
 use std::{
@@ -14,7 +14,7 @@ use std::{
     collections::VecDeque,
     time::{Duration, Instant},
 };
-
+use std::sync::{Arc};
 const UPDATE_INTERVAL: Duration = Duration::from_secs(1);
 
 #[derive(Clone, Default, PartialEq)]
@@ -23,6 +23,42 @@ pub struct LastNestSettings {
     min_bps: f32,
     bitrate_step_count: usize,
 }
+
+
+// HELPER FUNCTIONS: 
+
+ fn minmax_bitrate(
+                    bitrate_bps: f32,
+                    max_bitrate_bps: f32,
+                    min_bitrate_bps: f32,
+                ) -> f32 {
+                    let mut bitrate = bitrate_bps;
+
+                    bitrate = f32::min(bitrate, max_bitrate_bps);
+                    bitrate = f32::max(bitrate, min_bitrate_bps);
+
+                    bitrate
+                }
+
+pub fn upper_bound_bitrate(bitrate_bps: f32, bitrate_ladder: &Vec<f32>) -> f32 {
+                    // Perform binary search to find the largest value less than or equal to `bitrate_bps`
+                    match bitrate_ladder
+                        .binary_search_by(|x| x.partial_cmp(&bitrate_bps).unwrap_or(Ordering::Less))
+                    {
+                        Ok(index) => bitrate_ladder[index], // Exact match found
+                        Err(index) => {
+                            // If not found, `index` is where the value would be inserted to maintain sorted order
+                            if index == 0 {
+                                // If `bitrate_bps` is smaller than the first element, return the first element
+                                bitrate_ladder.first().copied().unwrap_or(bitrate_bps)
+                            } else {
+                                // Otherwise, return the element just before the insertion point (i.e., the largest <= bitrate_bps)
+                                bitrate_ladder[index - 1]
+                            }
+                        }
+                    }
+                }
+
 
 pub struct BitrateManager {
     nominal_frame_interval: Duration,
@@ -48,12 +84,13 @@ pub struct BitrateManager {
     frame_interarrival_average: SlidingWindowAverage<f32>,
 
     bitrate_ladder_bps: Option<Vec<f32>>,
+    pub bitrate_ladder_mbps_everest: Option<Vec<f32>>, 
     bitrate_step_size_bps: f32,
     last_nest_settings: LastNestSettings,
-    last_nada_target_bitrate_mbps: Option<f64>, 
+    pub last_nada_target_bitrate_mbps: Option<f64>, 
     
     pub gcc_estimator: Option<GccBandwidthEstimator>,
-    pub nada_sender: Option<Arc<Mutex<NadaSender>>>,
+    pub nada_sender: Option<Arc<crate::Mutex<NadaSender>>>,
 
     everest_last_capacity: f32,
     everest_last_throughput: f32,
@@ -63,7 +100,7 @@ pub struct BitrateManager {
     everest_last_dlong: f32,
     everest_time_last_capacity_update: Instant,
     everest_time_last_throughput_update: Instant,
-    everest_last_order: EverestCommand,
+    everest_last_order: alvr_packets::EverestCommand,
 }
 
 impl BitrateManager {
@@ -131,6 +168,7 @@ impl BitrateManager {
             ),
 
             bitrate_ladder_bps: None,
+            bitrate_ladder_mbps_everest: None, 
             bitrate_step_size_bps: 0.0,
             last_nest_settings: LastNestSettings::default(),
             last_nada_target_bitrate_mbps: None, 
@@ -144,7 +182,7 @@ impl BitrateManager {
             everest_throughput_ewma: 0.0,
             everest_time_last_capacity_update: Instant::now(),
             everest_time_last_throughput_update: Instant::now(),
-            everest_last_order: EverestCommand::Continue,
+            everest_last_order: alvr_packets::EverestCommand::Continue,
         }
     }
 
@@ -192,6 +230,7 @@ impl BitrateManager {
         network_stats: NetworkStatisticsPacket, // pass whole message
 
     ) {
+        let now = Instant::now(); 
         self.rtt_average.submit_sample(network_rtt);
 
         self.peak_throughput_average
@@ -413,36 +452,8 @@ impl BitrateManager {
                 nest_vr_profile,
                 ..
             } => {
-                pub fn upper_bound_bitrate(bitrate_bps: f32, bitrate_ladder: &Vec<f32>) -> f32 {
-                    // Perform binary search to find the largest value less than or equal to `bitrate_bps`
-                    match bitrate_ladder
-                        .binary_search_by(|x| x.partial_cmp(&bitrate_bps).unwrap_or(Ordering::Less))
-                    {
-                        Ok(index) => bitrate_ladder[index], // Exact match found
-                        Err(index) => {
-                            // If not found, `index` is where the value would be inserted to maintain sorted order
-                            if index == 0 {
-                                // If `bitrate_bps` is smaller than the first element, return the first element
-                                bitrate_ladder.first().copied().unwrap_or(bitrate_bps)
-                            } else {
-                                // Otherwise, return the element just before the insertion point (i.e., the largest <= bitrate_bps)
-                                bitrate_ladder[index - 1]
-                            }
-                        }
-                    }
-                }
-                fn minmax_bitrate(
-                    bitrate_bps: f32,
-                    max_bitrate_bps: f32,
-                    min_bitrate_bps: f32,
-                ) -> f32 {
-                    let mut bitrate = bitrate_bps;
-
-                    bitrate = f32::min(bitrate, max_bitrate_bps);
-                    bitrate = f32::max(bitrate, min_bitrate_bps);
-
-                    bitrate
-                }
+                
+               
 
                 let profile_config = get_profile_config(
                     *max_bitrate_mbps,
@@ -643,59 +654,72 @@ impl BitrateManager {
                 bitrate_bps
             }
         
-            BitrateMode::EverestPort {
-            } => {
-                    // let mut bitrate_bps = self.last_target_bitrate_bps;
-                    // print_red!("bitrate first: {} Mbps", bitrate_bps / 1e6);
+            BitrateMode::EverestPort {} => {
+                // let mut bitrate_bps = self.last_target_bitrate_bps;
+                // print_red!("bitrate first: {} Mbps", bitrate_bps / 1e6);
 
-                    let current_mbps = (self.last_target_bitrate_bps as f32) / 1e6;
-                    let new_mbps = match self.everest_last_order {
-                        EverestCommand::Continue => {
-                            // stay on the same rung (or the closest one)
-                            bitrate_ladder_mbps
-                                .iter()
-                                .find(|&&x| (x - current_mbps).abs() < std::f32::EPSILON)
-                                .copied()
-                                .unwrap_or(current_mbps)
+                let current_mbps = (self.last_target_bitrate_bps as f32) / 1e6;
+                        // Define `new_mbps` outside so it's accessible down below
+                        let new_mbps = if let Some(bitrate_ladder_everest) = &self.bitrate_ladder_mbps_everest {
+                            match self.everest_last_order {
+                                EverestCommand::Continue => {
+                                    // Find the rung with the minimum absolute difference to avoid EPSILON matching issues
+                                    bitrate_ladder_everest
+                                        .iter()
+                                        .min_by(|&&a, &&b| {
+                                            (a - current_mbps).abs()
+                                                .partial_cmp(&(b - current_mbps).abs())
+                                                .unwrap_or(std::cmp::Ordering::Equal)
+                                        })
+                                        .copied()
+                                        .unwrap_or(current_mbps)
+                                }
+                                EverestCommand::SpeedUp => {
+                                    // first entry strictly greater than current
+                                    bitrate_ladder_everest
+                                        .iter()
+                                        .find(|&&x| x > current_mbps)
+                                        .copied()
+                                        .unwrap_or(*bitrate_ladder_everest.last().unwrap())
+                                }
+                                EverestCommand::SlowDown => {
+                                    // last entry strictly less than current
+                                    bitrate_ladder_everest
+                                        .iter()
+                                        .rfind(|&&x| x < current_mbps)
+                                        .copied()
+                                        .unwrap_or(bitrate_ladder_everest[0])
+                                }
+                            }
+                        } else {
+                            current_mbps
+                        };
+
+                        let mut bitrate_bps: f32 = new_mbps * 1e6;
+
+                        let n_users =
+                            (self.everest_capacity_ewma / self.everest_throughput_ewma).ceil() as usize;
+                        let capacity_margin_bps = self.everest_capacity_ewma / (n_users as f32 + 1.0);
+
+                        bitrate_bps = f32::min(capacity_margin_bps, bitrate_bps);
+                        if let Some(ladder) = &self.bitrate_ladder_bps {
+                            bitrate_bps = upper_bound_bitrate(bitrate_bps, ladder);
+                        } else {
+                            // print_red!("t: {:.6} -> no bitrate ladder? ", format_elapsed!(now));
                         }
-                        EverestCommand::SpeedUp => {
-                            // first entry strictly greater than current
-                            bitrate_ladder_mbps
-                                .iter()
-                                .find(|&&x| x > current_mbps)
-                                .copied()
-                                .unwrap_or(*bitrate_ladder_mbps.last().unwrap())
-                        }
-                        EverestCommand::SlowDown => {
-                            // last entry strictly less than current
-                            bitrate_ladder_mbps
-                                .iter()
-                                .rfind(|&&x| x < current_mbps)
-                                .copied()
-                                .unwrap_or(bitrate_ladder_mbps[0])
-                        }
-                    };
-                    let mut bitrate_bps = new_mbps * 1e6;
-
-                    let n_users =
-                        (self.everest_capacity_ewma / self.everest_throughput_ewma).ceil() as usize;
-                    let capacity_margin_bps = self.everest_capacity_ewma / (n_users as f32 + 1.0);
-
-                    bitrate_bps = f32::min(capacity_margin_bps, bitrate_bps);
-                    if let Some(ladder) = &self.bitrate_ladder_bps {
-                        bitrate_bps = upper_bound_bitrate(bitrate_bps, ladder);
-                    } else {
-                        // print_red!("t: {:.6} -> no bitrate ladder? ", format_elapsed!(now));
-                    }
-
-                    self.last_target_bitrate_bps = bitrate_bps;
-
-                    bitrate_bps
-                },
-                
+                        self.last_target_bitrate_bps = bitrate_bps;
+                        bitrate_bps
+                }
                 BitrateMode::GCCPort {
                 } => {
-                    let bitrate_bps = self.gcc_estimator.get_target_bitrate_bps();
+
+
+                    let mut bitrate_bps = self.last_target_bitrate_bps; // default to this
+                    if let Some(estimator) = &self.gcc_estimator{
+                        bitrate_bps = estimator.get_target_bitrate_bps() as f32
+
+                    }
+                    
                     self.last_target_bitrate_bps = bitrate_bps as f32;
                     self.last_target_bitrate_bps
                 }
@@ -710,7 +734,7 @@ impl BitrateManager {
                         // panic!("WHATS HAPPPPPPPPPPENING CATCH!");
 
                         // print_dblue!("NADA not configured yet, bitrate : {} Mbps ", self.last_target_bitrate_bps/1e6);
-                        self.last_target_bitrate_bps = NADA_INITIAL_RATE as f32;
+                        self.last_target_bitrate_bps = alvr_common::NADA_INITIAL_RATE as f32;
                         self.last_target_bitrate_bps
                     }
                 }

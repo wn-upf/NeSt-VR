@@ -23,7 +23,6 @@ mod bindings {
     include!(concat!(env!("OUT_DIR"), "/bindings.rs"));
 }
 use bindings::*;
-use gcc_nada_estimator::*; 
 
 
 use alvr_common::{
