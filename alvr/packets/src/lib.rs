@@ -73,6 +73,36 @@ pub struct BatteryPacket {
     pub is_plugged: bool,
 }
 
+
+
+#[derive(Default, Serialize, Deserialize, Clone, Debug)]
+pub struct NadaStats {
+    pub frame_send_timestamp: i64,
+    pub shard_loss_rate: f64,
+    pub plr: f64,
+    pub is_idr: bool,
+
+    //RTCP Feedback Report: NADA Receiver--> Sender
+    pub nada_feedback: bool,
+    pub nada_xcurr: f64,
+    pub nada_rmode: i8,
+    pub nada_recv: i64,
+
+    //Only to debug NADA Receiver
+    pub t_last: i64,
+    pub d_queue: i64,
+    pub d_tilde: f64,
+}
+
+
+#[derive(Clone, Serialize, Deserialize, Debug)]
+pub enum EverestCommand {
+    SlowDown,
+    SpeedUp,
+    Continue,
+}
+
+
 #[derive(Serialize, Deserialize, Clone, Debug)]
 pub struct NetworkStatisticsPacket {
     pub frame_index: i32,
@@ -96,6 +126,17 @@ pub struct NetworkStatisticsPacket {
 
     pub highest_rx_frame_index: i32,
     pub highest_rx_shard_index: i32,
+
+
+    // Added for extra ABRs: 
+
+    pub everest_capacity_update: f32,
+    pub everest_throughput_update: f32,
+    pub everest_dshort: f32,
+    pub everest_dlong: f32,
+    pub everest_command: EverestCommand,
+    pub nada_stats: NadaStats,
+
 }
 
 #[derive(Serialize, Deserialize, Clone, Copy, Debug)]

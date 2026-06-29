@@ -6,6 +6,10 @@ mod primitives;
 mod timely;
 mod version;
 mod weighted;
+mod gcc_nada_estimator;
+
+
+
 
 use once_cell::sync::Lazy;
 use parking_lot::{Condvar, Mutex, RwLockWriteGuard};
@@ -28,6 +32,9 @@ pub use primitives::*;
 pub use timely::*;
 pub use version::*;
 pub use weighted::*;
+pub use gcc_nada_estimator::*; 
+
+
 
 pub const ALVR_NAME: &str = "ALVR";
 

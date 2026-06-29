@@ -1,10 +1,12 @@
 use crate::FfiDynamicEncoderParams;
 use alvr_common::SlidingWindowAverage;
 use alvr_events::{EventType, HeuristicStats, NominalBitrateStats};
+use alvr_session::GccBandwidthEstimator;
 use alvr_session::{
     get_profile_config, settings_schema::Switch, AveragingStrategy, BitrateAdaptiveFramerateConfig,
     BitrateConfig, BitrateMode, WindowType,
 };
+use alvr_packets::NetworkStatisticsPacket; 
 use rand::distributions::Uniform;
 use rand::{thread_rng, Rng};
 use std::{
@@ -48,6 +50,20 @@ pub struct BitrateManager {
     bitrate_ladder_bps: Option<Vec<f32>>,
     bitrate_step_size_bps: f32,
     last_nest_settings: LastNestSettings,
+    last_nada_target_bitrate_mbps: Option<f64>, 
+    
+    pub gcc_estimator: Option<GccBandwidthEstimator>,
+    pub nada_sender: Option<Arc<Mutex<NadaSender>>>,
+
+    everest_last_capacity: f32,
+    everest_last_throughput: f32,
+    everest_capacity_ewma: f32,
+    everest_throughput_ewma: f32,
+    everest_last_dshort: f32,
+    everest_last_dlong: f32,
+    everest_time_last_capacity_update: Instant,
+    everest_time_last_throughput_update: Instant,
+    everest_last_order: EverestCommand,
 }
 
 impl BitrateManager {
@@ -113,9 +129,22 @@ impl BitrateManager {
                 history_interval,
                 ewma_weight_val,
             ),
+
             bitrate_ladder_bps: None,
             bitrate_step_size_bps: 0.0,
             last_nest_settings: LastNestSettings::default(),
+            last_nada_target_bitrate_mbps: None, 
+            gcc_estimator: None, 
+            nada_sender: None, 
+            everest_last_capacity: 0.0,
+            everest_last_throughput: 0.0,
+            everest_last_dlong: 0.0,
+            everest_last_dshort: 0.0,
+            everest_capacity_ewma: 0.0,
+            everest_throughput_ewma: 0.0,
+            everest_time_last_capacity_update: Instant::now(),
+            everest_time_last_throughput_update: Instant::now(),
+            everest_last_order: EverestCommand::Continue,
         }
     }
 
@@ -160,6 +189,8 @@ impl BitrateManager {
         network_rtt: Duration,
         peak_throughput_bps: f32,
         frame_interarrival_s: f32,
+        network_stats: NetworkStatisticsPacket, // pass whole message
+
     ) {
         self.rtt_average.submit_sample(network_rtt);
 
@@ -168,6 +199,38 @@ impl BitrateManager {
 
         self.frame_interarrival_average
             .submit_sample(frame_interarrival_s);
+
+         /// EVEREST METRICS COMPUTE ///////
+        const T_USER_WIN: f32 = 5.0; // from original Everest paper
+
+        let everest_capacity_sample = network_stats.everest_capacity_update;
+        let everest_throughput_sample = network_stats.everest_throughput_update;
+
+        if everest_capacity_sample > 0.0 {
+            // we only get one or the other, which is computed is based on frame size. They are initialized to -1.0, only positive samples count
+            self.everest_last_capacity = everest_capacity_sample;
+            let last_c_f32 = now
+                .duration_since(self.everest_time_last_capacity_update)
+                .as_secs_f32();
+
+            self.everest_capacity_ewma = last_c_f32 / T_USER_WIN * everest_capacity_sample
+                + (1.0 - last_c_f32 / T_USER_WIN) * self.everest_capacity_ewma;
+            self.everest_time_last_capacity_update = now;
+        }
+
+        if everest_throughput_sample > 0.0 {
+            self.everest_last_throughput = everest_throughput_sample;
+            let last_t_f32 = now
+                .duration_since(self.everest_time_last_throughput_update)
+                .as_secs_f32();
+
+            self.everest_throughput_ewma = last_t_f32 / T_USER_WIN * everest_throughput_sample
+                + (1.0 - last_t_f32 / T_USER_WIN) * self.everest_throughput_ewma;
+            self.everest_time_last_throughput_update = now;
+        }
+        self.everest_last_dshort = network_stats.everest_dshort;
+        self.everest_last_dlong = network_stats.everest_dlong;
+        self.everest_last_order = network_stats.everest_command;
     }
 
     pub fn report_frame_latencies(
@@ -287,6 +350,15 @@ impl BitrateManager {
 
                     max_history_size = Some(*history_size);
                 }
+
+                // Everest and GCC run per-frame 
+
+                BitrateMode::EverestPort { ..}  => {
+                    self.update_interval = self.nominal_frame_interval; 
+                }
+                BitrateMode::GCCPort { ..} => {
+                    self.update_interval = self.nominal_frame_interval
+                }                
                 _ => {
                     self.update_interval = UPDATE_INTERVAL;
                 }
@@ -570,7 +642,84 @@ impl BitrateManager {
 
                 bitrate_bps
             }
+        
+            BitrateMode::EverestPort {
+            } => {
+                    // let mut bitrate_bps = self.last_target_bitrate_bps;
+                    // print_red!("bitrate first: {} Mbps", bitrate_bps / 1e6);
+
+                    let current_mbps = (self.last_target_bitrate_bps as f32) / 1e6;
+                    let new_mbps = match self.everest_last_order {
+                        EverestCommand::Continue => {
+                            // stay on the same rung (or the closest one)
+                            bitrate_ladder_mbps
+                                .iter()
+                                .find(|&&x| (x - current_mbps).abs() < std::f32::EPSILON)
+                                .copied()
+                                .unwrap_or(current_mbps)
+                        }
+                        EverestCommand::SpeedUp => {
+                            // first entry strictly greater than current
+                            bitrate_ladder_mbps
+                                .iter()
+                                .find(|&&x| x > current_mbps)
+                                .copied()
+                                .unwrap_or(*bitrate_ladder_mbps.last().unwrap())
+                        }
+                        EverestCommand::SlowDown => {
+                            // last entry strictly less than current
+                            bitrate_ladder_mbps
+                                .iter()
+                                .rfind(|&&x| x < current_mbps)
+                                .copied()
+                                .unwrap_or(bitrate_ladder_mbps[0])
+                        }
+                    };
+                    let mut bitrate_bps = new_mbps * 1e6;
+
+                    let n_users =
+                        (self.everest_capacity_ewma / self.everest_throughput_ewma).ceil() as usize;
+                    let capacity_margin_bps = self.everest_capacity_ewma / (n_users as f32 + 1.0);
+
+                    bitrate_bps = f32::min(capacity_margin_bps, bitrate_bps);
+                    if let Some(ladder) = &self.bitrate_ladder_bps {
+                        bitrate_bps = upper_bound_bitrate(bitrate_bps, ladder);
+                    } else {
+                        // print_red!("t: {:.6} -> no bitrate ladder? ", format_elapsed!(now));
+                    }
+
+                    self.last_target_bitrate_bps = bitrate_bps;
+
+                    bitrate_bps
+                },
+                
+                BitrateMode::GCCPort {
+                } => {
+                    let bitrate_bps = self.gcc_estimator.get_target_bitrate_bps();
+                    self.last_target_bitrate_bps = bitrate_bps as f32;
+                    self.last_target_bitrate_bps
+                }
+
+                BitrateMode::NadaPort {} => {
+                    if let Some(last_order_bitrate_mbps) = self.last_nada_target_bitrate_mbps {
+                        let bitrate_bps = last_order_bitrate_mbps * 1e6;
+                        self.last_target_bitrate_bps = bitrate_bps as f32;
+
+                        self.last_target_bitrate_bps
+                    } else {
+                        // panic!("WHATS HAPPPPPPPPPPENING CATCH!");
+
+                        // print_dblue!("NADA not configured yet, bitrate : {} Mbps ", self.last_target_bitrate_bps/1e6);
+                        self.last_target_bitrate_bps = NADA_INITIAL_RATE as f32;
+                        self.last_target_bitrate_bps
+                    }
+                }
+                
+            
+
+
         };
+
 
         stats.requested_bps = bitrate_bps;
         self.last_target_bitrate_bps = bitrate_bps;

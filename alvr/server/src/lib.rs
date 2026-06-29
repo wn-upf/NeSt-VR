@@ -23,6 +23,8 @@ mod bindings {
     include!(concat!(env!("OUT_DIR"), "/bindings.rs"));
 }
 use bindings::*;
+use gcc_nada_estimator::*; 
+
 
 use alvr_common::{
     error,
@@ -102,7 +104,6 @@ fn to_ffi_quat(quat: Quat) -> FfiQuat {
         w: quat.w,
     }
 }
-
 pub fn create_recording_file(settings: &Settings) {
     let codec = settings.video.preferred_codec;
     let ext = match codec {

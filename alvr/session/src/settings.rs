@@ -422,6 +422,15 @@ pub enum BitrateMode {
         #[schema(flag = "real-time")]
         nest_vr_profile: NestVrProfile,
     },
+    #[schema(strings(display_name = "Everest-Intra Port"))]
+    EverestPort {
+    },
+    #[schema(strings(display_name = "GCC Port"))]
+    GCCPort{
+    },
+    #[schema(strings(display_name = "NADA Port"))]
+    NadaPort{
+    }, 
 }
 
 #[derive(SettingsSchema, Serialize, Deserialize, Clone, PartialEq)]
@@ -1369,6 +1378,9 @@ pub fn session_settings_default() -> SettingsDefault {
                             variant: NestVrProfileDefaultVariant::Custom,
                         },
                     },
+                    EverestPort: BitrateModeEverestPortDefault { },
+                    GCCPort: BitrateModeGCCPortDefault {  }, 
+                    NadaPort: BitrateModeNadaPortDefault {  }, 
                     variant: BitrateModeDefaultVariant::NestVr,
                 },
                 adapt_to_framerate: SwitchDefault {

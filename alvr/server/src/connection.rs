@@ -1,14 +1,5 @@
 use crate::{
-    bitrate::BitrateManager,
-    face_tracking::FaceTrackingSink,
-    hand_gestures::{trigger_hand_gesture_actions, HandGestureManager, HAND_GESTURE_BUTTON_SET},
-    haptics,
-    input_mapping::ButtonMappingManager,
-    sockets::WelcomeSocket,
-    statistics::StatisticsManager,
-    tracking::{self, TrackingManager},
-    FfiFov, FfiViewsConfig, VideoPacket, BITRATE_MANAGER, DECODER_CONFIG, LIFECYCLE_STATE,
-    SERVER_DATA_MANAGER, STATISTICS_MANAGER, VIDEO_MIRROR_SENDER, VIDEO_RECORDING_FILE,
+    BITRATE_MANAGER, DECODER_CONFIG, FfiFov, FfiViewsConfig, LIFECYCLE_STATE, SERVER_DATA_MANAGER, STATISTICS_MANAGER, VIDEO_MIRROR_SENDER, VIDEO_RECORDING_FILE, VideoPacket, bitrate::BitrateManager, face_tracking::FaceTrackingSink, gcc_nada_estimator::GccBandwidthEstimator, hand_gestures::{HAND_GESTURE_BUTTON_SET, HandGestureManager, trigger_hand_gesture_actions}, haptics, input_mapping::ButtonMappingManager, sockets::WelcomeSocket, statistics::StatisticsManager, tracking::{self, TrackingManager},
 };
 use alvr_audio::AudioDevice;
 use alvr_common::{
@@ -21,12 +12,11 @@ use alvr_common::{
     warn, AnyhowToCon, ConResult, ConnectionError, ConnectionState, LifecycleState, OptLazy, ToCon,
     BUTTON_INFO, CONTROLLER_PROFILE_INFO, DEVICE_ID_TO_PATH, HEAD_ID, LEFT_HAND_ID,
     QUEST_CONTROLLER_PROFILE_PATH, RIGHT_HAND_ID,
+    NADAFeedbackReport, 
 };
 use alvr_events::{ButtonEvent, EventType, HapticsEvent, TrackingEvent};
 use alvr_packets::{
-    ClientConnectionResult, ClientControlPacket, ClientListAction, ClientStatistics, Haptics,
-    ServerControlPacket, StreamConfigPacket, Tracking, VideoPacketHeader, AUDIO, HAPTICS,
-    STATISTICS, TRACKING, VIDEO,
+    AUDIO, ClientConnectionResult, ClientControlPacket, ClientListAction, ClientStatistics, EverestCommand, HAPTICS, Haptics, STATISTICS, ServerControlPacket, StreamConfigPacket, TRACKING, Tracking, VIDEO, VideoPacketHeader,
 };
 use alvr_session::{
     get_profile_config, AveragingStrategy, BitrateMode, ControllersEmulationMode, FrameSize,
@@ -544,6 +534,10 @@ fn connection_pipeline(
 
     let config_mode = &server_data_lock.settings().video.bitrate.mode;
 
+    let mut bitrate_ladder_mbps_everest = Vec::new(); 
+    let mut bitrate_ladder_bps = Vec::new(); 
+    let mut everest_last_order = EverestCommand::Continue; 
+
     match config_mode {
         BitrateMode::NestVr {
             max_bitrate_mbps,
@@ -589,6 +583,25 @@ fn connection_pipeline(
         BitrateMode::Adaptive { history_size, .. } => {
             max_history_size = Some(*history_size);
         }
+        BitrateMode::EverestPort { } => 
+        {   
+            let values_original = [10.0, 20.0, 40.0, 60.0, 80.0, alvr_common::MAX_MBPS_LADDER];
+
+            for value in values_original.iter() {
+                bitrate_ladder_mbps_everest.push(*value as f32);
+                bitrate_ladder_std_bps.push(*value * 1e6)
+            }
+            println!("SAVE THE SETTINGS SOMEWHERE FOR THE BITRATE LADDER TODO!!!");
+        }
+        BitrateMode::GCCPort { gcc_estimator, framerate } => {
+
+            let bitrate_man = BITRATE_MANAGER.lock().unwrap(); 
+            bitrate_man.gcc_estimator = = Some(GccBandwidthEstimator::new(initial_framerate as f64)); 
+        }
+        BitrateMode::NADACiscoPort {} => {
+            BITRATE_MANAGER.lock().nada_sender = Arc::new(Mutex::new(NadaSender::new(Instant::now()))); 
+            // nada_sender_object = Some(NadaSender::new(Instant::now())); 
+        }
         _ => {}
     }
 
@@ -626,7 +639,6 @@ fn connection_pipeline(
     *HAPTICS_SENDER.lock() = Some(haptics_sender);
 
     let map: InstantMap = Arc::new(RwLock::new(HashMap::new()));
-
     let video_send_thread = thread::spawn({
         let client_hostname = client_hostname.clone();
         let map_clone: Arc<RwLock<HashMap<u32, Instant>>> = Arc::clone(&map);
@@ -1110,6 +1122,33 @@ fn connection_pipeline(
                                 peak_network_throughput_bps,
                                 frame_interarrival_s,
                             );
+
+
+                            if network_stats.nada_stats.nada_feedback{
+
+                                let client_stats = network_stats.nada_stats.clone();
+                                let feedback_report = NADAFeedbackReport::new(
+                                    client_stats.nada_rmode,
+                                    client_stats.nada_xcurr,
+                                    client_stats.nada_recv,
+                                    client_stats.d_queue,
+                                    client_stats.d_tilde,
+                                    client_stats.plr,
+                                );
+
+                                let bitrate_man = BITRATE_MANAGER.lock(); 
+                                if let Some(nada_sender_arc) = bitrate_man.nada_sender.as_mut() {
+                                    let mut nada_sender = nada_sender_arc.lock().unwrap();
+                                    nada_sender.update_on_receive_feedback(
+                                        now,
+                                        send_instant.duration_since(Instant::now()).as_micros() as i64,
+                                        feedback_report,
+                                        fps as f64,
+                                    );
+                                    BITRATE_MANAGER.lock().last_nada_target_bitrate_mbps =
+                                        Some(guard.get_target_bitrate() as f64 / 1024.0 / 1024.0);
+                                }
+                            }
                         }
                     }
 

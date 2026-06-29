@@ -46,6 +46,8 @@ pub struct KalmanFilter {
     p_prev: f32,
     k_gain: f32,
     measured_delay: f32,
+    pub last_tx_time: f32, 
+    pub last_rx_time: f32,
 }
 
 impl Default for KalmanFilter {
@@ -61,6 +63,8 @@ impl Default for KalmanFilter {
             p_prev: 0.0,
             k_gain: 0.0,
             measured_delay: 0.0,
+            last_tx_time: 0.0, 
+            last_rx_time: 0.0, 
         }
     }
 }
@@ -279,6 +283,9 @@ pub struct ReceiverData<H> {
 
     highest_rx_frame_index: i32,
     highest_rx_shard_index: i32,
+
+    tx_instant_packet: f32,
+    rx_instant_packet: f32,
 }
 
 impl<H> ReceiverData<H> {
@@ -302,6 +309,13 @@ impl<H> ReceiverData<H> {
     }
     pub fn get_filtered_ow_delay(&self) -> f32 {
         self.filtered_ow_delay
+    }
+
+    pub fn get_tx_time_first(&self) -> f32 {
+        self.tx_instant_packet
+    }
+    pub fn get_rx_time_last(&self) -> f32 {
+        self.rx_instant_packet
     }
 
     pub fn get_rx_bytes(&self) -> u32 {
@@ -374,6 +388,9 @@ struct ReconstructedPacket {
 
     highest_rx_frame_index: i32,
     highest_rx_shard_index: i32,
+
+    tx_instant_packet: f32, // used for NADA ABR in XRClient connection loop
+    rx_instant_packet: f32,
 }
 
 pub struct StreamReceiver<H> {
@@ -478,6 +495,9 @@ impl<H: DeserializeOwned + Serialize> StreamReceiver<H> {
 
             highest_rx_frame_index: packet.highest_rx_frame_index,
             highest_rx_shard_index: packet.highest_rx_shard_index,
+
+            tx_instant_packet: packet.tx_instant_packet,
+            rx_instant_packet: packet.rx_instant_packet,
         })
     }
 }
@@ -1019,6 +1039,9 @@ impl StreamSocket {
 
                     interarrival_jitter: self.interarrival_jitter,
                     ow_delay: self.kalman.ow_delay,
+
+                    tx_instant_packet: self.kalman.last_tx_time, // used for NADA ABR in XRClient connection loop
+                    rx_instant_packet: self.kalman.last_rx_time, // used for NADA ABR in XRClient connection loop
                     filtered_ow_delay: self.kalman.m_current,
 
                     rx_bytes: self.rx_bytes,

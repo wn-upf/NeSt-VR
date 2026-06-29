@@ -17,14 +17,16 @@ use alvr_common::{
     once_cell::sync::Lazy,
     parking_lot::{Condvar, RwLock},
     wait_rwlock, warn, AnyhowToCon, ConResult, ConnectionError, ConnectionState, LifecycleState,
-    OptLazy, ToCon, ALVR_VERSION,
+    OptLazy, ToCon, ALVR_VERSION, NadaReceiver, RateUpdateMode, 
+
 };
 use alvr_packets::{
     ClientConnectionResult, ClientControlPacket, ClientStatistics, Haptics,
-    NetworkStatisticsPacket, ServerControlPacket, StreamConfigPacket, Tracking, VideoPacketHeader,
+    NetworkStatisticsPacket,  ServerControlPacket, StreamConfigPacket, Tracking, VideoPacketHeader,
     VideoStreamingCapabilities, AUDIO, HAPTICS, STATISTICS, TRACKING, VIDEO,
+    EverestCommand, NadaStats,  
 };
-use alvr_session::{settings_schema::Switch, SessionConfig};
+use alvr_session::{settings_schema::Switch, SessionConfig, BitrateMode, };
 use alvr_sockets::{
     ControlSocketSender, PeerType, ProtoControlSocket, StreamSender, StreamSocketBuilder,
     KEEPALIVE_INTERVAL, KEEPALIVE_TIMEOUT,
@@ -36,6 +38,8 @@ use std::{
     thread,
     time::{Duration, Instant},
 };
+
+
 
 #[cfg(target_os = "android")]
 use crate::audio;
@@ -293,6 +297,21 @@ fn connection_pipeline(
 
     let mut frames_dropped: u32 = 0; // number of frames dropped
 
+
+    let is_everest_enabled = matches!(settings.video.bitrate.mode, BitrateMode::EverestPort{..}) ; 
+
+    pub struct EverestObject {
+        frame_size_exp_avg: f32,
+        d_short_exp_avg: f32,
+        d_long_exp_avg: f32,
+    }
+    let mut everest_receiver_object = EverestObject{ // Assuming these are kept in scope all the time during the loop
+        frame_size_exp_avg: 0.0,
+        d_short_exp_avg: 0.0, 
+        d_long_exp_avg: 0.0,
+    }; 
+
+    let mut nada_receiver_object = Some(NadaReceiver::new(Instant::now()) ); // Assuming these are kept in scope all the time during the loop
     let video_receive_thread = thread::spawn(move || {
         let mut stream_corrupted = false;
         while is_streaming() {
@@ -301,6 +320,131 @@ fn connection_pipeline(
                 Err(ConnectionError::TryAgain(_)) => continue,
                 Err(ConnectionError::Other(_)) => return,
             };
+
+
+            let mut everest_throughput: f32 = -1.0; // initialize, if negative then on rx don't count
+            let mut everest_capacity: f32 = -1.0; // (only one measure per frame of either)
+
+            let mut command_abr_everest = EverestCommand::Continue;
+
+            if is_everest_enabled {
+                pub const EVEREST_CLASSIC: bool = false;
+                if everest_receiver_object.frame_size_exp_avg == 0.0 {
+                    everest_receiver_object.frame_size_exp_avg = data.get_bytes_in_frame() as f32;
+                    // initialize avg only on first value
+                }
+                if everest_receiver_object.d_short_exp_avg == 0.0 {
+                    everest_receiver_object.d_short_exp_avg = data.get_frame_span()
+                        * data.get_frame_interarrival()
+                        / T_SHORT_EVEREST_S;
+                }
+                if everest_receiver_object.d_long_exp_avg == 0.0 {
+                    everest_receiver_object.d_long_exp_avg = data.get_frame_span()
+                        * data.get_frame_interarrival()
+                        / T_LONG_EVEREST_S;
+                }
+                pub const MPDU_MAX_SIZE: u32 = 1500;
+                pub const THETA_EWMA: f32 = 0.01; // we want the long term expectation for comparison of individual frame sizes.
+
+                pub const T_SHORT_EVEREST_S: f32 = 1.0;
+                pub const T_LONG_EVEREST_S: f32 = 5.0;
+
+                let frame_size_bytes = data.get_bytes_in_frame() as f32;
+                let frame_span = data.get_frame_span();
+
+                if frame_span != 0.0 {
+                    // prevent division by zero
+                    
+                    // EVEREST-Intra
+                    everest_receiver_object.frame_size_exp_avg = (THETA_EWMA * frame_size_bytes)
+                        + (1.0 - THETA_EWMA) * everest_receiver_object.frame_size_exp_avg;
+
+                    if frame_size_bytes > everest_receiver_object.frame_size_exp_avg {
+                        everest_throughput = frame_size_bytes * 8.0 / frame_span;
+                    } else {
+                        let frame_size_mtu_portion =
+                            (frame_size_bytes as u32 / MPDU_MAX_SIZE) as f32
+                                * MPDU_MAX_SIZE as f32; // just the part with full packets of MTU
+                        everest_capacity = (frame_size_mtu_portion * 8.0) / frame_span;
+
+                        // print_yellow!("Capacity ev: L / deltaT = {} ({}) / {} = {}", frame_size_mtu_portion, frame_size_bytes, frame_span, everest_capacity);
+                        }
+                }
+
+                let interarrival = data.get_frame_interarrival();
+                everest_receiver_object.d_short_exp_avg = (interarrival / T_SHORT_EVEREST_S * frame_span)
+                    + (1.0 - interarrival / T_SHORT_EVEREST_S) * everest_receiver_object.d_short_exp_avg;
+                everest_receiver_object.d_long_exp_avg = (interarrival / T_LONG_EVEREST_S * frame_span)
+                    + (1.0 - interarrival / T_LONG_EVEREST_S) * everest_receiver_object.d_long_exp_avg;
+
+                //  (B2 = 2 * B1). This code assumes that every next bitrate will double the previous when going up the ladder, given the lack of the bitrate ladder info
+                //  at the client. 
+                //  Then: B1/B2 is always 0.5, so d_lower reduces to a constant fraction of the frame period — no live bitrate
+                // or ladder knowledge needed on the client at all.
+                let d_period = 1.0 / refresh_rate_hint;
+
+                const BITRATE_STEP_RATIO: f32 = 0.5; // B1/B2 for a doubling ladder
+                let d_lower_everest = BITRATE_STEP_RATIO * d_period;
+                let d_upper_everest = d_period;
+
+                const T_LOW_EVEREST_S: f32 = 0.005;
+                const T_HIGH_EVEREST_S: f32 = 0.020;
+
+                if everest_receiver_object.d_short_exp_avg >= d_upper_everest {
+                    everest_receiver_object.d_short_exp_avg = T_LOW_EVEREST_S;
+                    command_abr_everest = EverestCommand::SlowDown;
+                }
+                if everest_receiver_object.d_long_exp_avg < d_lower_everest {
+                    everest_receiver_object.d_long_exp_avg = T_HIGH_EVEREST_S;
+                    command_abr_everest = EverestCommand::SpeedUp;
+                }
+
+            }
+
+            //////////////////////////////////////////////  // NADA rcv loop upon succesfully receiving a full frame.
+            let mut nada_stats: NadaStats = NadaStats::default();
+
+            if let Some(nada_receiver) = nada_receiver_object.as_mut() {
+                // println!("Nada receiver exists");
+                // let mut nada_receiver = nada_receiver_in.lock().unwrap();
+                let now = Instant::now(); 
+
+                let frame_send_timestamp = data.get_tx_time_first(); // as secs;
+                let frame_recv_timestamp = data.get_rx_time_last(); //as secs;
+                let size = data.get_bytes_in_frame() as usize;
+
+                let micros_send_ts = (frame_send_timestamp * 1_000_000.0).round() as i64;
+                let micros_rcv_ts = (frame_recv_timestamp * 1_000_000.0).round() as i64;
+
+                nada_receiver.compute_oneway_delay(micros_send_ts, micros_rcv_ts); //inputs as micros
+                nada_receiver.update_receive_loss_rate(size);
+                let is_feedback_on =
+                    nada_receiver.time_to_report_feedback(now, false, false);
+
+                //if there is a feedback to report
+                if is_feedback_on {
+                    // println!("FEEDBACK IS ON");
+                    //send RTCP feedback report containing values of: rmode, x_curr, and r_recv
+                    nada_stats.nada_feedback = true;
+                    nada_stats.nada_xcurr = nada_receiver.x_curr;
+                    nada_stats.nada_rmode = match nada_receiver.rmode {
+                        RateUpdateMode::AcceleratedRampUp => 0,
+                        RateUpdateMode::GradualUpdate => 1,
+                        _ => 1,
+                    };
+                    nada_stats.nada_recv = nada_receiver.r_recv;
+
+                    //To Debug NADA Receiver, report values of: t_last, d_fwd, d_tilde, d_queue, p_loss
+                    nada_stats.plr = nada_receiver.p_loss;
+                    nada_stats.d_tilde = nada_receiver.d_tilde;
+                    nada_stats.d_queue = nada_receiver.d_queue;
+
+                    //update t_last = t_curr
+                    nada_receiver.update_t_last(now);
+                } else {
+                    nada_stats.nada_feedback = false;
+                }
+            }
 
             // send frame and network statistics for every reconstructed video frame
             if let Some(sender) = &mut *CONTROL_SENDER.lock() {
@@ -330,6 +474,16 @@ fn connection_pipeline(
 
                             highest_rx_frame_index: data.get_highest_rx_frame_index(), // index of the highest video frame received during the interval between consecutive frames
                             highest_rx_shard_index: data.get_highest_rx_shard_index(), // index of the highest video shard received during the interval between consecutive frames
+                        
+
+                            everest_capacity_update: everest_capacity,
+                            everest_throughput_update: everest_throughput,
+                            everest_dshort: everest_receiver_object.d_short_exp_avg,
+                            everest_dlong: everest_receiver_object.d_long_exp_avg,
+                            everest_command: command_abr_everest,
+                            // edca_ac: EdcaAc::Video, // Explanation: Given we're computing the VF-RTT of video packets based on arrivals, let's assume this AC for UL to get the same 'treatment' by EDCA.
+                            nada_stats,                      
+                        
                         },
                     ))
                     .ok();
