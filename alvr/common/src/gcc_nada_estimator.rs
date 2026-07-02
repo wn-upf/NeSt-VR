@@ -18,7 +18,7 @@ pub const MIN_MBPS_LADDER: f32 = 10.0;
 
 use crate::SlidingWindowAverageLegacy;
 
-const DEBUG_GCC: bool = false;
+const DEBUG_GCC: bool = true;
 
 macro_rules! gcc_debug {
     ($fmt:expr, $($arg:tt)*) => {

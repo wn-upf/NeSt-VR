@@ -1,5 +1,5 @@
 use alvr_common::{info, DeviceMotion, LogEntry, Pose};
-use alvr_packets::{AudioDevicesList, ButtonValue};
+use alvr_packets::{AudioDevicesList, ButtonValue, EverestCommand};
 use alvr_session::SessionConfig;
 use serde::{Deserialize, Serialize};
 use std::{path::PathBuf, time::Duration};
@@ -133,6 +133,34 @@ pub struct HeuristicStats {
     pub requested_bitrate_bps: f32,
 }
 
+#[derive(Serialize, Deserialize, Clone, Debug, Copy, Default)]
+pub struct EverestStats {
+    pub control_order: EverestCommand, 
+    pub new_bitrate: f32, 
+    pub d_short: f32, 
+    pub d_long: f32, 
+    pub capacity_estimation: f32, 
+
+}
+#[derive(Serialize, Deserialize, Clone, Debug, Copy, Default)]
+pub struct GCCstats {
+    pub control_order: EverestCommand, 
+    pub new_bitrate: f32, 
+    pub d_short: f32, 
+    pub d_long: f32, 
+    pub capacity_estimation: f32, 
+}
+
+#[derive(Serialize, Deserialize, Clone, Debug, Copy, Default)]
+pub struct NADAstats {
+    pub control_order: EverestCommand, 
+    pub new_bitrate: f32, 
+    pub d_short: f32, 
+    pub d_long: f32, 
+    pub capacity_estimation: f32, 
+}
+
+
 #[derive(Serialize, Deserialize, Clone, Debug)]
 pub struct TrackingEvent {
     pub head_motion: Option<DeviceMotion>,
@@ -167,6 +195,9 @@ pub enum EventType {
     GraphStatistics(GraphStatistics),
     GraphNetworkStatistics(GraphNetworkStatistics),
     HeuristicStats(HeuristicStats),
+    EverestStats(EverestStats),
+    GCCstats(GCCstats),
+    NADAstats(NADAstats), 
     Tracking(Box<TrackingEvent>),
     Buttons(Vec<ButtonEvent>),
     Haptics(HapticsEvent),

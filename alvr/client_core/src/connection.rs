@@ -299,6 +299,7 @@ fn connection_pipeline(
 
 
     let is_everest_enabled = matches!(settings.video.bitrate.mode, BitrateMode::EverestPort{..}) ; 
+    let is_nada_enabled = matches!(settings.video.bitrate.mode, BitrateMode::NadaPort{..}) ; 
 
     pub struct EverestObject {
         frame_size_exp_avg: f32,
@@ -311,7 +312,12 @@ fn connection_pipeline(
         d_long_exp_avg: 0.0,
     }; 
 
-    let mut nada_receiver_object = Some(NadaReceiver::new(Instant::now()) ); // Assuming these are kept in scope all the time during the loop
+    let mut nada_receiver_object = if is_nada_enabled {
+        Some(NadaReceiver::new(Instant::now()) ) // Assuming these are kept in scope all the time during the loop
+    }   
+    else{
+        None
+    }; 
     let video_receive_thread = thread::spawn(move || {
         let mut stream_corrupted = false;
         while is_streaming() {
@@ -328,7 +334,6 @@ fn connection_pipeline(
             let mut command_abr_everest = EverestCommand::Continue;
 
             if is_everest_enabled {
-                pub const EVEREST_CLASSIC: bool = false;
                 if everest_receiver_object.frame_size_exp_avg == 0.0 {
                     everest_receiver_object.frame_size_exp_avg = data.get_bytes_in_frame() as f32;
                     // initialize avg only on first value
@@ -507,7 +512,7 @@ fn connection_pipeline(
                     if let Some(sender) = &mut *CONTROL_SENDER.lock() {
                         sender.send(&ClientControlPacket::RequestIdr).ok();
                     }
-                    last_instant_IDR_client = Instant::now();
+                    last_instant_IDR_client = Instant::now();   
                 }
             }
 

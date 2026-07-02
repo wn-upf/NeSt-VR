@@ -95,11 +95,14 @@ pub struct NadaStats {
 }
 
 
-#[derive(Clone, Serialize, Deserialize, Debug)]
+#[derive(Clone, Copy,  Serialize, Deserialize, Debug)]
 pub enum EverestCommand {
     SlowDown,
     SpeedUp,
     Continue,
+}
+impl Default for EverestCommand{
+    fn default() -> Self { EverestCommand::Continue}
 }
 
 

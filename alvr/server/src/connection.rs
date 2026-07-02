@@ -579,23 +579,7 @@ fn connection_pipeline(
         BitrateMode::Adaptive { history_size, .. } => {
             max_history_size = Some(*history_size);
         }
-        BitrateMode::EverestPort { } => 
-        {   
-            let values_original = vec![10.0, 20.0, 40.0, 60.0, 80.0, alvr_common::MAX_MBPS_LADDER];
-            let mut bitrate_man = BITRATE_MANAGER.lock(); 
-            
-            bitrate_man.bitrate_ladder_mbps_everest = Some(values_original); 
-            // println!("SAVE THE SETTINGS SOMEWHERE FOR THE BITRATE LADDER TODO!!!");
-        }
-        BitrateMode::GCCPort { .. } => {
-
-            let mut bitrate_man = BITRATE_MANAGER.lock(); 
-            bitrate_man.gcc_estimator = Some(GccBandwidthEstimator::new(fps as f64, Instant::now())); 
-        }
-        BitrateMode::NadaPort {} => {
-            BITRATE_MANAGER.lock().nada_sender = Some(Arc::new(Mutex::new(NadaSender::new(Instant::now())))); 
-            // nada_sender_object = Some(NadaSender::new(Instant::now())); 
-        }
+       
         _ => {}
     }
 
@@ -606,6 +590,30 @@ fn connection_pipeline(
         history_interval,
         ewma_weight_val,
     );
+    match config_mode {
+         BitrateMode::EverestPort { } => 
+        {   
+            warn!("EVEREST ACTIVE"); 
+            let values_original = vec![10.0, 20.0, 40.0, 60.0, 80.0, alvr_common::MAX_MBPS_LADDER];
+            let mut bitrate_man = BITRATE_MANAGER.lock(); 
+            
+            bitrate_man.bitrate_ladder_mbps_everest = Some(values_original); 
+            // println!("SAVE THE SETTINGS SOMEWHERE FOR THE BITRATE LADDER TODO!!!");
+        }
+        BitrateMode::GCCPort { .. } => {
+            warn!("GCC ACTIVE"); 
+
+            let mut bitrate_man = BITRATE_MANAGER.lock(); 
+            bitrate_man.gcc_estimator = Some(GccBandwidthEstimator::new(fps as f64, Instant::now())); 
+        }
+        BitrateMode::NadaPort {} => {
+            warn!("NADA ACTIVE"); 
+
+            BITRATE_MANAGER.lock().nada_sender = Some(Arc::new(Mutex::new(NadaSender::new(Instant::now())))); 
+            // nada_sender_object = Some(NadaSender::new(Instant::now())); 
+        }
+        _ => {}
+    }
 
     let mut stream_socket = StreamSocketBuilder::connect_to_client(
         HANDSHAKE_ACTION_TIMEOUT,

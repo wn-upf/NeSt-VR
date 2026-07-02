@@ -1,6 +1,6 @@
 use crate::FfiDynamicEncoderParams;
 use alvr_common::SlidingWindowAverage;
-use alvr_events::{EventType, HeuristicStats, NominalBitrateStats};
+use alvr_events::{EventType, EverestStats, HeuristicStats, NominalBitrateStats};
 use alvr_common::{GccBandwidthEstimator, NadaSender};
 use alvr_session::{
     get_profile_config, settings_schema::Switch, AveragingStrategy, BitrateAdaptiveFramerateConfig,
@@ -442,7 +442,6 @@ impl BitrateManager {
         self.update_needed = false;
 
         let mut stats = NominalBitrateStats::default();
-
         let bitrate_bps = match &config.mode {
             BitrateMode::ConstantMbps(bitrate_mbps) => *bitrate_mbps as f32 * 1e6,
             BitrateMode::NestVr {
@@ -452,18 +451,13 @@ impl BitrateManager {
                 nest_vr_profile,
                 ..
             } => {
-                
-               
-
                 let profile_config = get_profile_config(
                     *max_bitrate_mbps,
                     *min_bitrate_mbps,
                     *initial_bitrate_mbps,
                     nest_vr_profile,
                 );
-
                 let mut recompute_bitrate_ladder = false;
-
                 let current_settings = LastNestSettings {
                     max_bps: max_bitrate_mbps * 1E6,
                     min_bps: min_bitrate_mbps * 1E6,
@@ -599,7 +593,6 @@ impl BitrateManager {
 
                 bitrate_bps
             }
-
             BitrateMode::Adaptive {
                 saturation_multiplier,
                 max_bitrate_mbps,
@@ -707,17 +700,26 @@ impl BitrateManager {
                         } else {
                             // print_red!("t: {:.6} -> no bitrate ladder? ", format_elapsed!(now));
                         }
+
+                        let everest_log = EverestStats {
+                            control_order: self.everest_last_order, 
+                            new_bitrate: bitrate_bps, 
+                            d_short: self.everest_last_dshort, 
+                            d_long: self.everest_last_dlong, 
+                            capacity_estimation: self.everest_last_capacity, 
+                        }; 
+
+                        alvr_events::send_event(EventType::EverestStats(everest_log));
                         self.last_target_bitrate_bps = bitrate_bps;
                         bitrate_bps
                 }
+
                 BitrateMode::GCCPort {
                 } => {
-
-
                     let mut bitrate_bps = self.last_target_bitrate_bps; // default to this
                     if let Some(estimator) = &self.gcc_estimator{
-                        bitrate_bps = estimator.get_target_bitrate_bps() as f32
-
+                        bitrate_bps = estimator.get_target_bitrate_bps() as f32; 
+                        alvr_common::warn!("GCC Estimator enabled"); 
                     }
                     
                     self.last_target_bitrate_bps = bitrate_bps as f32;
@@ -738,10 +740,6 @@ impl BitrateManager {
                         self.last_target_bitrate_bps
                     }
                 }
-                
-            
-
-
         };
 
 
