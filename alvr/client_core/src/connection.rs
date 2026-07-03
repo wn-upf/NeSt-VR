@@ -424,7 +424,7 @@ fn connection_pipeline(
                 nada_receiver.compute_oneway_delay(micros_send_ts, micros_rcv_ts); //inputs as micros
                 nada_receiver.update_receive_loss_rate(size);
                 let is_feedback_on =
-                    nada_receiver.time_to_report_feedback(now, false, false);
+                    nada_receiver.time_to_report_feedback(now, false, false); // even though original has field to signal packet loss, they do not use it ever. We keep it as is
 
                 //if there is a feedback to report
                 if is_feedback_on {
@@ -487,8 +487,10 @@ fn connection_pipeline(
                             everest_dlong: everest_receiver_object.d_long_exp_avg,
                             everest_command: command_abr_everest,
                             // edca_ac: EdcaAc::Video, // Explanation: Given we're computing the VF-RTT of video packets based on arrivals, let's assume this AC for UL to get the same 'treatment' by EDCA.
-                            nada_stats,                      
-                        
+                            nada_stats,
+
+                            frame_tx_instant: data.get_tx_time_first(),
+                            frame_rx_instant: data.get_rx_time_last(),
                         },
                     ))
                     .ok();

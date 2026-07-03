@@ -17,8 +17,9 @@ pub const MAX_MBPS_LADDER: f32 = 100.0;
 pub const MIN_MBPS_LADDER: f32 = 10.0; 
 
 use crate::SlidingWindowAverageLegacy;
+use serde::{Deserialize, Serialize};
 
-const DEBUG_GCC: bool = true;
+const DEBUG_GCC: bool = false;
 
 macro_rules! gcc_debug {
     ($fmt:expr, $($arg:tt)*) => {
@@ -220,12 +221,17 @@ impl InterArrival {
     }
 }
 
-#[derive(PartialEq, Debug, Clone)]
+#[derive(PartialEq, Debug, Clone, Copy, Serialize, Deserialize)]
 pub enum BandwidthUsage {
     kBwNormal = 0,
     kBwUnderusing = 1,
     kBwOverusing = 2,
     kLast,
+}
+impl Default for BandwidthUsage {
+    fn default() -> Self {
+        BandwidthUsage::kBwNormal
+    }
 }
 
 pub struct PacketTiming {
@@ -591,11 +597,16 @@ impl Default for NetworkStateEstimate {
     }
 }
 
-#[derive(PartialEq, Debug)]
+#[derive(PartialEq, Debug, Clone, Copy, Serialize, Deserialize)]
 pub enum RateControlState {
     kRcHold = 0,
     kRcIncrease = 1,
     kRcDecrease = 2,
+}
+impl Default for RateControlState {
+    fn default() -> Self {
+        RateControlState::kRcHold
+    }
 }
 pub struct RateControlInput {
     pub bw_state: BandwidthUsage,
@@ -1251,10 +1262,15 @@ impl NADAFeedbackReport {
         }
     }
 }
-#[derive(Debug, Clone, Copy)]
+#[derive(Debug, Clone, Copy, Serialize, Deserialize)]
 pub enum RateUpdateMode {
     AcceleratedRampUp = 0, // Corresponds to rmode = 0
     GradualUpdate = 1,     // Corresponds to rmode = 1
+}
+impl Default for RateUpdateMode {
+    fn default() -> Self {
+        RateUpdateMode::GradualUpdate
+    }
 }
 
 pub struct NadaSender {
@@ -1573,19 +1589,23 @@ impl NadaReceiver {
     /** When packet losses are observed, the estimated queuing delay follows
     a non-linear warping inspired by the delay-adaptive congestion window
     backoff policy in [Budzisz-TON11]: **/
-    fn compute_d_tilde(&mut self, had_packet_loss: bool) {
-        if had_packet_loss {
-            if self.d_queue < NADA_PARAM_QTH {
-                self.d_tilde = self.d_queue as f64;
-            } else if self.d_queue > NADA_PARAM_QTH && self.d_queue < NADA_PARAM_QMAX {
+    // PS after integrating in NeSt-VR: This is unused since had_paket_loss is always set to false  
+     fn compute_d_tilde(&mut self, had_packet_loss:bool){
+
+        if had_packet_loss{
+            if  self.d_queue <  NADA_PARAM_QTH{
+                self.d_tilde =  self.d_queue as f64;
+
+            } else if self.d_queue > NADA_PARAM_QTH &&  self.d_queue < NADA_PARAM_QMAX{
                 let numerator = (NADA_PARAM_QTH - self.d_queue).pow(4);
                 let denominator = (NADA_PARAM_QMAX - NADA_PARAM_QTH).pow(4);
-                self.d_tilde = NADA_PARAM_QTH as f64 * (numerator / denominator) as f64;
-            } else {
+                self.d_tilde = NADA_PARAM_QTH  as f64 * (numerator/ denominator) as f64;
+            
+            } else{
                 self.d_tilde = 0.0;
             }
         }
-    }
+    } 
 
     /** On time to send a new feedback report (t_curr - t_last > DELTA)
     calculate non-linear warping of delay d_tilde if packet loss exists

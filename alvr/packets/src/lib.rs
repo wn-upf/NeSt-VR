@@ -131,7 +131,7 @@ pub struct NetworkStatisticsPacket {
     pub highest_rx_shard_index: i32,
 
 
-    // Added for extra ABRs: 
+    // Added for extra ABRs:
 
     pub everest_capacity_update: f32,
     pub everest_throughput_update: f32,
@@ -139,6 +139,13 @@ pub struct NetworkStatisticsPacket {
     pub everest_dlong: f32,
     pub everest_command: EverestCommand,
     pub nada_stats: NadaStats,
+
+    // Raw per-frame send/arrival instants (seconds, each relative to its own endpoint's local
+    // reference time). Used by NADA (one-way delay) and GCC (trendline over-use detector) on
+    // the server, which only need consistent deltas within each sequence, not synchronized
+    // clocks between client and server.
+    pub frame_tx_instant: f32,
+    pub frame_rx_instant: f32,
 
 }
 

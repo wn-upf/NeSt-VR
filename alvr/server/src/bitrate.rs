@@ -1,6 +1,6 @@
 use crate::FfiDynamicEncoderParams;
 use alvr_common::SlidingWindowAverage;
-use alvr_events::{EventType, EverestStats, HeuristicStats, NominalBitrateStats};
+use alvr_events::{EventType, EverestStats, GCCstats, HeuristicStats, NADAstats, NominalBitrateStats};
 use alvr_common::{GccBandwidthEstimator, NadaSender};
 use alvr_session::{
     get_profile_config, settings_schema::Switch, AveragingStrategy, BitrateAdaptiveFramerateConfig,
@@ -270,6 +270,16 @@ impl BitrateManager {
         self.everest_last_dshort = network_stats.everest_dshort;
         self.everest_last_dlong = network_stats.everest_dlong;
         self.everest_last_order = network_stats.everest_command;
+
+        // GCC METRICS COMPUTE ///////
+        if let Some(estimator) = self.gcc_estimator.as_mut() {
+            estimator.Update(
+                network_stats.frame_tx_instant as f64 * 1_000_000.0,
+                network_stats.frame_rx_instant as f64 * 1_000_000.0,
+                network_stats.bytes_in_frame as i64,
+                now,
+            );
+        }
     }
 
     pub fn report_frame_latencies(
@@ -392,8 +402,8 @@ impl BitrateManager {
 
                 // Everest and GCC run per-frame 
 
-                BitrateMode::EverestPort { ..}  => {
-                    self.update_interval = self.nominal_frame_interval; 
+                BitrateMode::EverestPort { .. }  => {
+                    self.update_interval = self.nominal_frame_interval;
                 }
                 BitrateMode::GCCPort { ..} => {
                     self.update_interval = self.nominal_frame_interval
@@ -647,7 +657,7 @@ impl BitrateManager {
                 bitrate_bps
             }
         
-            BitrateMode::EverestPort {} => {
+            BitrateMode::EverestPort { .. } => {
                 // let mut bitrate_bps = self.last_target_bitrate_bps;
                 // print_red!("bitrate first: {} Mbps", bitrate_bps / 1e6);
 
@@ -717,11 +727,31 @@ impl BitrateManager {
                 BitrateMode::GCCPort {
                 } => {
                     let mut bitrate_bps = self.last_target_bitrate_bps; // default to this
-                    if let Some(estimator) = &self.gcc_estimator{
-                        bitrate_bps = estimator.get_target_bitrate_bps() as f32; 
-                        alvr_common::warn!("GCC Estimator enabled"); 
+                    if let Some(estimator) = &mut self.gcc_estimator{
+                        bitrate_bps = estimator.get_target_bitrate_bps() as f32;
+
+                        let estimated_throughput_bps =
+                            estimator.bitrate_estimator_manager.bitrate().unwrap_or(0.0) as f32;
+                        let (link_capacity_lower_bps, link_capacity_upper_bps) = estimator
+                            .aimd_manager
+                            .network_estimate_
+                            .as_ref()
+                            .map(|n| (n.link_capacity_lower as f32, n.link_capacity_upper as f32))
+                            .unwrap_or((0.0, 0.0));
+
+                        let gcc_log = GCCstats {
+                            bandwidth_usage: estimator.trendline_manager.hypothesis_,
+                            rate_control_state: estimator.aimd_manager.rate_control_state_,
+                            trend: estimator.trendline_manager.current_trend_for_testing,
+                            threshold: estimator.trendline_manager.current_threshold_for_testing,
+                            estimated_throughput_bps,
+                            link_capacity_lower_bps,
+                            link_capacity_upper_bps,
+                            new_bitrate_bps: bitrate_bps,
+                        };
+                        alvr_events::send_event(EventType::GCCstats(gcc_log));
                     }
-                    
+
                     self.last_target_bitrate_bps = bitrate_bps as f32;
                     self.last_target_bitrate_bps
                 }
@@ -730,6 +760,24 @@ impl BitrateManager {
                     if let Some(last_order_bitrate_mbps) = self.last_nada_target_bitrate_mbps {
                         let bitrate_bps = last_order_bitrate_mbps * 1e6;
                         self.last_target_bitrate_bps = bitrate_bps as f32;
+
+                        if let Some(nada_sender_arc) = &self.nada_sender {
+                            let nada_sender = nada_sender_arc.lock();
+
+                            let nada_log = NADAstats {
+                                rate_update_mode: nada_sender.rmode,
+                                x_curr: nada_sender.x_curr,
+                                r_recv_bps: nada_sender.r_recv,
+                                r_ref_bps: nada_sender.r_ref,
+                                r_vin_bps: nada_sender.r_vin,
+                                r_send_bps: nada_sender.r_send,
+                                rtt_ms: nada_sender.rtt_history.get_average() / 1000.0,
+                                d_queue_ms: nada_sender.d_queue as f32 / 1000.0,
+                                p_loss: nada_sender.p_loss,
+                                new_bitrate_bps: self.last_target_bitrate_bps,
+                            };
+                            alvr_events::send_event(EventType::NADAstats(nada_log));
+                        }
 
                         self.last_target_bitrate_bps
                     } else {

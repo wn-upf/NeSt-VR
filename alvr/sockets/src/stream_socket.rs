@@ -581,6 +581,7 @@ impl StreamSocketBuilder {
             kalman: KalmanFilter::default(),
             prev_frame_rx_instant: Instant::now(),
             prev_frame_tx_r_instant: None,
+            reference_time: Instant::now(),
 
             rx_shard_counter: 0,
             duplicated_shard_counter: 0,
@@ -646,6 +647,7 @@ impl StreamSocketBuilder {
             kalman: KalmanFilter::default(),
             prev_frame_rx_instant: Instant::now(),
             prev_frame_tx_r_instant: None,
+            reference_time: Instant::now(),
 
             rx_shard_counter: 0,
             duplicated_shard_counter: 0,
@@ -703,6 +705,7 @@ pub struct StreamSocket {
     kalman: KalmanFilter,
     prev_frame_rx_instant: Instant,
     prev_frame_tx_r_instant: Option<f32>,
+    reference_time: Instant,
 
     rx_shard_counter: u32,
     duplicated_shard_counter: u32,
@@ -996,6 +999,15 @@ impl StreamSocket {
                                 - (first_shard_stats.tx_r_instant - prev_frame_tx_r_instant);
                         }
                         self.prev_frame_tx_r_instant = Some(first_shard_stats.tx_r_instant);
+
+                        // Used for NADA/GCC one-way-delay estimation (client side). tx_r_instant
+                        // is already relative to the sender's own reference_time; rx side uses
+                        // its own reference_time here. Only deltas within each sequence matter,
+                        // so the two endpoints' clocks don't need to be synchronized.
+                        self.kalman.last_tx_time = first_shard_stats.tx_r_instant;
+                        self.kalman.last_rx_time = max_time
+                            .saturating_duration_since(self.reference_time)
+                            .as_secs_f32();
 
                         self.kalman.k_gain = (self.kalman.p_prev + Q_KALMAN)
                             / (self.kalman.p_prev + Q_KALMAN + self.kalman.noise_estimation);

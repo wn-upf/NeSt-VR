@@ -591,14 +591,22 @@ fn connection_pipeline(
         ewma_weight_val,
     );
     match config_mode {
-         BitrateMode::EverestPort { } => 
-        {   
-            warn!("EVEREST ACTIVE"); 
-            let values_original = vec![10.0, 20.0, 40.0, 60.0, 80.0, alvr_common::MAX_MBPS_LADDER];
-            let mut bitrate_man = BITRATE_MANAGER.lock(); 
-            
-            bitrate_man.bitrate_ladder_mbps_everest = Some(values_original); 
-            // println!("SAVE THE SETTINGS SOMEWHERE FOR THE BITRATE LADDER TODO!!!");
+         BitrateMode::EverestPort { custom_bitrate_ladder } =>
+        {
+            warn!("EVEREST ACTIVE");
+            let bitrate_ladder = if let Switch::Enabled(ladder_config) = custom_bitrate_ladder {
+                let min = ladder_config.min_bitrate_mbps;
+                let max = ladder_config.max_bitrate_mbps;
+                let steps = ladder_config.steps.max(1);
+                let step_size = (max - min) / steps as f32;
+
+                (0..=steps).map(|i| min + step_size * i as f32).collect()
+            } else {
+                vec![10.0, 20.0, 40.0, 60.0, 80.0, alvr_common::MAX_MBPS_LADDER]
+            };
+            let mut bitrate_man = BITRATE_MANAGER.lock();
+
+            bitrate_man.bitrate_ladder_mbps_everest = Some(bitrate_ladder);
         }
         BitrateMode::GCCPort { .. } => {
             warn!("GCC ACTIVE"); 
@@ -1107,46 +1115,62 @@ fn connection_pipeline(
                             let mut hashmap = map_rtt_lock.clone();
                             let frame_id = network_stats.frame_index as u32;
 
-                            let rtt: Duration;
-                            let send_instant= hashmap.remove(&frame_id).unwrap(); 
-                            rtt = now.saturating_duration_since(send_instant);
-                            
-                            // } else {
-                            //     rtt = Duration::ZERO;
-                            // }
+                            // The frame tracker only retains the most recent 256 frames, so under
+                            // high latency (e.g. bandwidth-emulated testing) the entry for this
+                            // frame may already have been evicted by the time feedback arrives.
+                            // That's expected and not an error, so skip this report rather than
+                            // unwrapping (which used to panic and crash the streamer).
+                            if let Some(send_instant) = hashmap.remove(&frame_id) {
+                                let rtt = now.saturating_duration_since(send_instant);
 
-                            let (peak_network_throughput_bps, frame_interarrival_s) =
-                                stats.report_network_statistics(network_stats.clone(), rtt);
+                                let (peak_network_throughput_bps, frame_interarrival_s) =
+                                    stats.report_network_statistics(network_stats.clone(), rtt);
 
-                            BITRATE_MANAGER.lock().report_network_statistics(
-                                rtt,
-                                peak_network_throughput_bps,
-                                frame_interarrival_s,
-                                network_stats.clone(), 
-                            );
-
-                            if network_stats.nada_stats.nada_feedback{
-                                let client_stats = network_stats.nada_stats.clone();
-                                let feedback_report = NADAFeedbackReport::new(
-                                    client_stats.nada_rmode,
-                                    client_stats.nada_xcurr,
-                                    client_stats.nada_recv,
-                                    client_stats.d_queue,
-                                    client_stats.d_tilde,
-                                    client_stats.plr,
+                                BITRATE_MANAGER.lock().report_network_statistics(
+                                    rtt,
+                                    peak_network_throughput_bps,
+                                    frame_interarrival_s,
+                                    network_stats.clone(),
                                 );
 
-                                let mut bitrate_man = BITRATE_MANAGER.lock(); 
-                                if let Some(nada_sender_arc) = bitrate_man.nada_sender.as_mut() {
-                                    let mut nada_sender = nada_sender_arc.lock();
-                                    nada_sender.update_on_receive_feedback(
-                                        now,
-                                        send_instant.duration_since(Instant::now()).as_micros() as i64,
-                                        feedback_report,
-                                        fps as f64,
+                                if network_stats.nada_stats.nada_feedback {
+                                    warn!("Nada feedback received"); 
+                                    let client_stats = network_stats.nada_stats.clone();
+                                    let feedback_report = NADAFeedbackReport::new(
+                                        client_stats.nada_rmode,
+                                        client_stats.nada_xcurr,
+                                        client_stats.nada_recv,
+                                        client_stats.d_queue,
+                                        client_stats.d_tilde,
+                                        client_stats.plr,
                                     );
-                                    BITRATE_MANAGER.lock().last_nada_target_bitrate_mbps =
-                                        Some(nada_sender.get_target_bitrate() as f64 / 1024.0 / 1024.0);
+
+                                    let mut bitrate_man = BITRATE_MANAGER.lock();
+                                    // Clone the Arc (not a reference into bitrate_man) so that
+                                    // bitrate_man isn't borrowed for the rest of this block: it
+                                    // used to be re-locked below via BITRATE_MANAGER.lock() while
+                                    // this same guard was still held, which deadlocks parking_lot's
+                                    // non-reentrant Mutex and froze the whole streaming session
+                                    // (every other thread that needs BITRATE_MANAGER, including
+                                    // video encoding, then blocks forever).
+                                    if let Some(nada_sender_arc) = bitrate_man.nada_sender.clone() {
+                                        let mut nada_sender = nada_sender_arc.lock();
+                                        // send_timestamp must be expressed relative to the same
+                                        // t0 reference NadaSender uses internally for t_curr,
+                                        // otherwise the RTT computed inside
+                                        // update_on_receive_feedback is meaningless.
+                                        let send_timestamp_us = send_instant
+                                            .duration_since(nada_sender.t0)
+                                            .as_micros() as i64;
+                                        nada_sender.update_on_receive_feedback(
+                                            now,
+                                            send_timestamp_us,
+                                            feedback_report,
+                                            fps as f64,
+                                        );
+                                        bitrate_man.last_nada_target_bitrate_mbps =
+                                            Some(nada_sender.get_target_bitrate() as f64 / 1024.0 / 1024.0);
+                                    }
                                 }
                             }
                         }

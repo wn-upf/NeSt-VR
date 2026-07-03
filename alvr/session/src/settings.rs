@@ -355,6 +355,28 @@ pub enum NestVrProfile {
 }
 
 #[derive(SettingsSchema, Serialize, Deserialize, Clone, PartialEq)]
+#[schema(collapsible)]
+pub struct EverestBitrateLadderConfig {
+    #[schema(strings(display_name = "Minimum bitrate"))]
+    #[schema(flag = "real-time")]
+    #[schema(gui(slider(min = 1.0, max = 1000.0, logarithmic)), suffix = "Mbps")]
+    pub min_bitrate_mbps: f32,
+
+    #[schema(strings(display_name = "Maximum bitrate"))]
+    #[schema(flag = "real-time")]
+    #[schema(gui(slider(min = 1.0, max = 1000.0, logarithmic)), suffix = "Mbps")]
+    pub max_bitrate_mbps: f32,
+
+    #[schema(strings(
+        display_name = "Number of steps",
+        help = "The ladder is generated with equidistant steps between the minimum and maximum bitrate"
+    ))]
+    #[schema(flag = "real-time")]
+    #[schema(gui(slider(min = 1, max = 20)))]
+    pub steps: u64,
+}
+
+#[derive(SettingsSchema, Serialize, Deserialize, Clone, PartialEq)]
 #[schema(gui = "button_group")]
 pub enum BitrateMode {
     #[schema(strings(display_name = "Constant"))]
@@ -424,6 +446,12 @@ pub enum BitrateMode {
     },
     #[schema(strings(display_name = "Everest-Intra Port"))]
     EverestPort {
+        #[schema(strings(
+            display_name = "Custom bitrate ladder",
+            help = "When enabled, generates an equidistant bitrate ladder from the minimum to the maximum bitrate using the given number of steps, instead of the default fixed ladder"
+        ))]
+        #[schema(flag = "real-time")]
+        custom_bitrate_ladder: Switch<EverestBitrateLadderConfig>,
     },
     #[schema(strings(display_name = "GCC Port"))]
     GCCPort{
@@ -1378,7 +1406,17 @@ pub fn session_settings_default() -> SettingsDefault {
                             variant: NestVrProfileDefaultVariant::Custom,
                         },
                     },
-                    EverestPort: BitrateModeEverestPortDefault { },
+                    EverestPort: BitrateModeEverestPortDefault {
+                        custom_bitrate_ladder: SwitchDefault {
+                            enabled: false,
+                            content: EverestBitrateLadderConfigDefault {
+                                gui_collapsed: false,
+                                min_bitrate_mbps: 10.0,
+                                max_bitrate_mbps: 100.0,
+                                steps: 5,
+                            },
+                        },
+                    },
                     GCCPort: BitrateModeGCCPortDefault {  }, 
                     NadaPort: BitrateModeNadaPortDefault {  }, 
                     variant: BitrateModeDefaultVariant::NestVr,

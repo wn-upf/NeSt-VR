@@ -1,4 +1,4 @@
-use alvr_common::{info, DeviceMotion, LogEntry, Pose};
+use alvr_common::{info, BandwidthUsage, DeviceMotion, LogEntry, Pose, RateControlState, RateUpdateMode};
 use alvr_packets::{AudioDevicesList, ButtonValue, EverestCommand};
 use alvr_session::SessionConfig;
 use serde::{Deserialize, Serialize};
@@ -144,20 +144,28 @@ pub struct EverestStats {
 }
 #[derive(Serialize, Deserialize, Clone, Debug, Copy, Default)]
 pub struct GCCstats {
-    pub control_order: EverestCommand, 
-    pub new_bitrate: f32, 
-    pub d_short: f32, 
-    pub d_long: f32, 
-    pub capacity_estimation: f32, 
+    pub bandwidth_usage: BandwidthUsage,
+    pub rate_control_state: RateControlState,
+    pub trend: f64,
+    pub threshold: f64,
+    pub estimated_throughput_bps: f32,
+    pub link_capacity_lower_bps: f32,
+    pub link_capacity_upper_bps: f32,
+    pub new_bitrate_bps: f32,
 }
 
 #[derive(Serialize, Deserialize, Clone, Debug, Copy, Default)]
 pub struct NADAstats {
-    pub control_order: EverestCommand, 
-    pub new_bitrate: f32, 
-    pub d_short: f32, 
-    pub d_long: f32, 
-    pub capacity_estimation: f32, 
+    pub rate_update_mode: RateUpdateMode,
+    pub x_curr: f64,
+    pub r_recv_bps: i64,
+    pub r_ref_bps: i64,
+    pub r_vin_bps: i64,
+    pub r_send_bps: i64,
+    pub rtt_ms: f32,
+    pub d_queue_ms: f32,
+    pub p_loss: f64,
+    pub new_bitrate_bps: f32,
 }
 
 
