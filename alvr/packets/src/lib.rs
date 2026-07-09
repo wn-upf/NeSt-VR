@@ -73,8 +73,6 @@ pub struct BatteryPacket {
     pub is_plugged: bool,
 }
 
-
-
 #[derive(Default, Serialize, Deserialize, Clone, Debug)]
 pub struct NadaStats {
     pub frame_send_timestamp: i64,
@@ -94,17 +92,17 @@ pub struct NadaStats {
     pub d_tilde: f64,
 }
 
-
-#[derive(Clone, Copy,  Serialize, Deserialize, Debug)]
+#[derive(Clone, Copy, Serialize, Deserialize, Debug)]
 pub enum EverestCommand {
     SlowDown,
     SpeedUp,
     Continue,
 }
-impl Default for EverestCommand{
-    fn default() -> Self { EverestCommand::Continue}
+impl Default for EverestCommand {
+    fn default() -> Self {
+        EverestCommand::Continue
+    }
 }
-
 
 #[derive(Serialize, Deserialize, Clone, Debug)]
 pub struct NetworkStatisticsPacket {
@@ -130,9 +128,7 @@ pub struct NetworkStatisticsPacket {
     pub highest_rx_frame_index: i32,
     pub highest_rx_shard_index: i32,
 
-
     // Added for extra ABRs:
-
     pub everest_capacity_update: f32,
     pub everest_throughput_update: f32,
     pub everest_dshort: f32,
@@ -146,7 +142,6 @@ pub struct NetworkStatisticsPacket {
     // clocks between client and server.
     pub frame_tx_instant: f32,
     pub frame_rx_instant: f32,
-
 }
 
 #[derive(Serialize, Deserialize, Clone, Copy, Debug)]

@@ -24,7 +24,6 @@ mod bindings {
 }
 use bindings::*;
 
-
 use alvr_common::{
     error,
     glam::Quat,
@@ -69,7 +68,15 @@ static WEBSERVER_RUNTIME: OptLazy<Runtime> = Lazy::new(|| Mutex::new(Runtime::ne
 
 static STATISTICS_MANAGER: OptLazy<StatisticsManager> = alvr_common::lazy_mut_none();
 static BITRATE_MANAGER: Lazy<Mutex<BitrateManager>> =
-    Lazy::new(|| Mutex::new(BitrateManager::new(Some(256), 60.0, 30.0, None, None)));
+    Lazy::new(|| {
+        Mutex::new(BitrateManager::new(
+            Some(256),
+            60.0,
+            alvr_common::MAX_MBPS_LADDER,
+            None,
+            None,
+        ))
+    });
 
 pub struct VideoPacket {
     pub header: VideoPacketHeader,

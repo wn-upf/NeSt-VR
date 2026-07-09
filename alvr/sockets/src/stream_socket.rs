@@ -46,7 +46,7 @@ pub struct KalmanFilter {
     p_prev: f32,
     k_gain: f32,
     measured_delay: f32,
-    pub last_tx_time: f32, 
+    pub last_tx_time: f32,
     pub last_rx_time: f32,
 }
 
@@ -63,8 +63,8 @@ impl Default for KalmanFilter {
             p_prev: 0.0,
             k_gain: 0.0,
             measured_delay: 0.0,
-            last_tx_time: 0.0, 
-            last_rx_time: 0.0, 
+            last_tx_time: 0.0,
+            last_rx_time: 0.0,
         }
     }
 }

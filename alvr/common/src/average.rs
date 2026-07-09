@@ -3,7 +3,6 @@ use std::{
     time::{Duration, Instant},
 };
 
-
 #[derive(Clone)]
 pub struct SlidingWindowAverageLegacy<T> {
     pub history_buffer: VecDeque<T>,
@@ -76,8 +75,6 @@ impl SlidingWindowAverageLegacy<Duration> {
         self.history_buffer.iter().sum::<Duration>() / self.history_buffer.len() as u32
     }
 }
-
-
 
 pub struct SlidingWindowAverage<T> {
     history_buffer: VecDeque<(T, Instant)>,

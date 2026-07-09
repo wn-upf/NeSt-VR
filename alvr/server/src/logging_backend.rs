@@ -11,7 +11,16 @@ pub fn init_logging(events_sender: Sender<Event>) {
     let mut log_dispatch = Dispatch::new().format(move |out, message, record| {
         let maybe_event = format!("{message}");
         let event_type = if maybe_event.starts_with('{') && maybe_event.ends_with('}') {
-            serde_json::from_str(&maybe_event).unwrap()
+            match serde_json::from_str(&maybe_event) {
+                Ok(event_type) => event_type,
+                Err(err) => EventType::Log(LogEntry {
+                    severity: LogSeverity::Error,
+                    content: format!(
+                        "Failed to deserialize JSON log. Err: {err}, raw: {maybe_event}"
+                    ),
+                }),
+            }
+            // serde_json::from_str(&maybe_event).unwrap()
         } else {
             EventType::Log(LogEntry {
                 severity: LogSeverity::from_log_level(record.level()),

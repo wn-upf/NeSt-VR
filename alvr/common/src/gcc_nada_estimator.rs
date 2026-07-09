@@ -14,7 +14,7 @@ use std::{
 // use crate::lib::models_XR::{MAX_MBPS_LADDER, MIN_MBPS_LADDER};
 
 pub const MAX_MBPS_LADDER: f32 = 100.0;
-pub const MIN_MBPS_LADDER: f32 = 10.0; 
+pub const MIN_MBPS_LADDER: f32 = 10.0;
 
 use crate::SlidingWindowAverageLegacy;
 use serde::{Deserialize, Serialize};
@@ -32,9 +32,9 @@ macro_rules! gcc_debug {
 }
 
 pub const GCC_WINDOW_SIZE: usize = 20;
-pub const GCC_MIN_CONFIGURED_BITRATE: f64 = 5.0 * 1000. * 1000.; //5Mbps
+pub const GCC_MIN_CONFIGURED_BITRATE: f64 = 10.0 * 1000. * 1000.; //5Mbps
 pub const GCC_MAX_CONFIGURED_BITRATE: f64 = MAX_MBPS_LADDER as f64 * 1000.0 * 1000.0; //100Mbps
-pub const GCC_INIT_CONFIGURED_BITRATE: f64 = 15.0 * 1000. * 1000.; //15Mbps
+pub const GCC_INIT_CONFIGURED_BITRATE: f64 = MAX_MBPS_LADDER as f64 * 1000.0 * 1000.0; //100Mbps
 pub const GCC_INCREASE_COEF_ALPHA: f64 = 1.08;
 pub const GCC_DECREASE_COEF_BETA: f64 = 0.85;
 pub const GCC_DEFAULT_RTT: i64 = 200; //200ms
@@ -1040,10 +1040,10 @@ pub struct GccBandwidthEstimator {
     pub last_frame_send_timestamp: f64,
     pub last_frame_arrival_timestamp: f64,
 
-    pub t0: Instant, 
+    pub t0: Instant,
 }
 impl GccBandwidthEstimator {
-    pub fn new(framerate: f64, now: Instant,) -> Self {
+    pub fn new(framerate: f64, now: Instant) -> Self {
         Self {
             trendline_manager: TrendlineEstimator::new(),
             aimd_manager: AimdRateControl::new(true, framerate),
@@ -1054,8 +1054,8 @@ impl GccBandwidthEstimator {
             bitrate_estimator_manager: BitrateEstimator::new(),
             last_frame_send_timestamp: 0.,
             last_frame_arrival_timestamp: 0.,
-            t0: now, 
-        }   
+            t0: now,
+        }
     }
 
     pub fn Update(
@@ -1191,9 +1191,9 @@ pub const NADA_PARAM_PRIO: f64 = 1.0; //Weight of priority of the flow | 1.0
 /**
  * Min and Max rate of application supported by media encoder | 150 Kbps & 1.5 Mbps
  **/
-pub const RMCAT_CC_DEFAULT_RMIN: i64 = 2_000_000; // 5Mbps
+pub const RMCAT_CC_DEFAULT_RMIN: i64 = 10_000_000; // 10Mbps
 pub const RMCAT_CC_DEFAULT_RMAX: i64 = GCC_MAX_CONFIGURED_BITRATE as i64; //100Mbps
-pub const NADA_INITIAL_RATE: i64 = 15_000_000; //15Mbps
+pub const NADA_INITIAL_RATE: i64 = GCC_MAX_CONFIGURED_BITRATE as i64; //100Mbps
 pub const NADA_PARAM_XREF: i64 = 20; //Reference congestion level | 20ms
 pub const NADA_PARAM_KAPPA: f64 = 0.5; //Scaling parameter for gradual rate update | 0.5
 pub const NADA_PARAM_ETA: f64 = 2.0; //Scaling parameter for gradual rate update | 2.0
@@ -1292,7 +1292,7 @@ pub struct NadaSender {
     pub d_tilde: f64, //Equivalent delay after non-linear warping
     pub p_loss: f64,  //Estimated packet loss ratio
 
-    pub t0: Instant, 
+    pub t0: Instant,
 }
 impl NadaSender {
     pub fn new(now: Instant) -> Self {
@@ -1313,7 +1313,7 @@ impl NadaSender {
             d_queue: 0,
             d_tilde: 0.0,
             p_loss: 0.0,
-            t0: now, 
+            t0: now,
         }
     }
 
@@ -1535,11 +1535,11 @@ pub struct NadaReceiver {
     total_packets_lost: u32,
     pub receive_rate_timer: Instant,
 
-    pub t0: Instant, 
+    pub t0: Instant,
 }
 
 impl NadaReceiver {
-    pub fn new( now: Instant) -> Self {
+    pub fn new(now: Instant) -> Self {
         Self {
             d_base: i64::MAX,
             d_tilde: 0.0,
@@ -1562,7 +1562,7 @@ impl NadaReceiver {
             total_packets_lost: 0,
             receive_rate_timer: Instant::now(),
 
-            t0: now, 
+            t0: now,
         }
     }
 
@@ -1589,23 +1589,20 @@ impl NadaReceiver {
     /** When packet losses are observed, the estimated queuing delay follows
     a non-linear warping inspired by the delay-adaptive congestion window
     backoff policy in [Budzisz-TON11]: **/
-    // PS after integrating in NeSt-VR: This is unused since had_paket_loss is always set to false  
-     fn compute_d_tilde(&mut self, had_packet_loss:bool){
-
-        if had_packet_loss{
-            if  self.d_queue <  NADA_PARAM_QTH{
-                self.d_tilde =  self.d_queue as f64;
-
-            } else if self.d_queue > NADA_PARAM_QTH &&  self.d_queue < NADA_PARAM_QMAX{
+    // PS after integrating in NeSt-VR: This is unused since had_paket_loss is always set to false
+    fn compute_d_tilde(&mut self, had_packet_loss: bool) {
+        if had_packet_loss {
+            if self.d_queue < NADA_PARAM_QTH {
+                self.d_tilde = self.d_queue as f64;
+            } else if self.d_queue > NADA_PARAM_QTH && self.d_queue < NADA_PARAM_QMAX {
                 let numerator = (NADA_PARAM_QTH - self.d_queue).pow(4);
                 let denominator = (NADA_PARAM_QMAX - NADA_PARAM_QTH).pow(4);
-                self.d_tilde = NADA_PARAM_QTH  as f64 * (numerator/ denominator) as f64;
-            
-            } else{
+                self.d_tilde = NADA_PARAM_QTH as f64 * (numerator / denominator) as f64;
+            } else {
                 self.d_tilde = 0.0;
             }
         }
-    } 
+    }
 
     /** On time to send a new feedback report (t_curr - t_last > DELTA)
     calculate non-linear warping of delay d_tilde if packet loss exists

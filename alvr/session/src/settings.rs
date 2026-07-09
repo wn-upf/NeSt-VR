@@ -452,13 +452,18 @@ pub enum BitrateMode {
         ))]
         #[schema(flag = "real-time")]
         custom_bitrate_ladder: Switch<EverestBitrateLadderConfig>,
+
+        #[schema(strings(
+            display_name = "Clamp to ladder minimum",
+            help = "When enabled, after the bitrate is capped to the estimated network capacity, it is never allowed to go below the minimum rung of the bitrate ladder"
+        ))]
+        #[schema(flag = "real-time")]
+        clamp_to_ladder_min: bool,
     },
     #[schema(strings(display_name = "GCC Port"))]
-    GCCPort{
-    },
+    GCCPort {},
     #[schema(strings(display_name = "NADA Port"))]
-    NadaPort{
-    }, 
+    NadaPort {},
 }
 
 #[derive(SettingsSchema, Serialize, Deserialize, Clone, PartialEq)]
@@ -1416,9 +1421,10 @@ pub fn session_settings_default() -> SettingsDefault {
                                 steps: 5,
                             },
                         },
+                        clamp_to_ladder_min: false,
                     },
-                    GCCPort: BitrateModeGCCPortDefault {  }, 
-                    NadaPort: BitrateModeNadaPortDefault {  }, 
+                    GCCPort: BitrateModeGCCPortDefault {},
+                    NadaPort: BitrateModeNadaPortDefault {},
                     variant: BitrateModeDefaultVariant::NestVr,
                 },
                 adapt_to_framerate: SwitchDefault {

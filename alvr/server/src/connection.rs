@@ -1,5 +1,14 @@
 use crate::{
-    BITRATE_MANAGER, DECODER_CONFIG, FfiFov, FfiViewsConfig, LIFECYCLE_STATE, SERVER_DATA_MANAGER, STATISTICS_MANAGER, VIDEO_MIRROR_SENDER, VIDEO_RECORDING_FILE, VideoPacket, bitrate::BitrateManager, face_tracking::FaceTrackingSink, hand_gestures::{HAND_GESTURE_BUTTON_SET, HandGestureManager, trigger_hand_gesture_actions}, haptics, input_mapping::ButtonMappingManager, sockets::WelcomeSocket, statistics::StatisticsManager, tracking::{self, TrackingManager},
+    bitrate::BitrateManager,
+    face_tracking::FaceTrackingSink,
+    hand_gestures::{trigger_hand_gesture_actions, HandGestureManager, HAND_GESTURE_BUTTON_SET},
+    haptics,
+    input_mapping::ButtonMappingManager,
+    sockets::WelcomeSocket,
+    statistics::StatisticsManager,
+    tracking::{self, TrackingManager},
+    FfiFov, FfiViewsConfig, VideoPacket, BITRATE_MANAGER, DECODER_CONFIG, LIFECYCLE_STATE,
+    SERVER_DATA_MANAGER, STATISTICS_MANAGER, VIDEO_MIRROR_SENDER, VIDEO_RECORDING_FILE,
 };
 use alvr_audio::AudioDevice;
 use alvr_common::{
@@ -9,14 +18,16 @@ use alvr_common::{
     once_cell::sync::Lazy,
     parking_lot::{Condvar, Mutex},
     settings_schema::Switch,
-    warn, AnyhowToCon, ConResult, ConnectionError, ConnectionState, LifecycleState, OptLazy, ToCon,
-    BUTTON_INFO, CONTROLLER_PROFILE_INFO, DEVICE_ID_TO_PATH, HEAD_ID, LEFT_HAND_ID,
+    warn, AnyhowToCon, ConResult, ConnectionError, ConnectionState, GccBandwidthEstimator,
+    LifecycleState, NADAFeedbackReport, NadaSender, OptLazy, ToCon, BUTTON_INFO,
+    CONTROLLER_PROFILE_INFO, DEVICE_ID_TO_PATH, HEAD_ID, LEFT_HAND_ID,
     QUEST_CONTROLLER_PROFILE_PATH, RIGHT_HAND_ID,
-    NADAFeedbackReport, GccBandwidthEstimator, NadaSender, 
 };
 use alvr_events::{ButtonEvent, EventType, HapticsEvent, TrackingEvent};
 use alvr_packets::{
-    AUDIO, ClientConnectionResult, ClientControlPacket, ClientListAction, ClientStatistics, EverestCommand, HAPTICS, Haptics, STATISTICS, ServerControlPacket, StreamConfigPacket, TRACKING, Tracking, VIDEO, VideoPacketHeader,
+    ClientConnectionResult, ClientControlPacket, ClientListAction, ClientStatistics,
+    EverestCommand, Haptics, ServerControlPacket, StreamConfigPacket, Tracking, VideoPacketHeader,
+    AUDIO, HAPTICS, STATISTICS, TRACKING, VIDEO,
 };
 use alvr_session::{
     get_profile_config, AveragingStrategy, BitrateMode, ControllersEmulationMode, FrameSize,
@@ -527,7 +538,7 @@ fn connection_pipeline(
         },
     ));
 
-    let mut initial_bitrate = 30.0;
+    let initial_bitrate = alvr_common::MAX_MBPS_LADDER;
     let mut max_history_size = Some(256);
     let mut history_interval = None;
     let mut ewma_weight_val = None;
@@ -543,8 +554,6 @@ fn connection_pipeline(
             nest_vr_profile,
             ..
         } => {
-            initial_bitrate = *initial_bitrate_mbps;
-
             let profile_config = get_profile_config(
                 *max_bitrate_mbps,
                 *min_bitrate_mbps,
@@ -579,7 +588,7 @@ fn connection_pipeline(
         BitrateMode::Adaptive { history_size, .. } => {
             max_history_size = Some(*history_size);
         }
-       
+
         _ => {}
     }
 
@@ -591,8 +600,10 @@ fn connection_pipeline(
         ewma_weight_val,
     );
     match config_mode {
-         BitrateMode::EverestPort { custom_bitrate_ladder } =>
-        {
+        BitrateMode::EverestPort {
+            custom_bitrate_ladder,
+            ..
+        } => {
             warn!("EVEREST ACTIVE");
             let bitrate_ladder = if let Switch::Enabled(ladder_config) = custom_bitrate_ladder {
                 let min = ladder_config.min_bitrate_mbps;
@@ -609,16 +620,18 @@ fn connection_pipeline(
             bitrate_man.bitrate_ladder_mbps_everest = Some(bitrate_ladder);
         }
         BitrateMode::GCCPort { .. } => {
-            warn!("GCC ACTIVE"); 
+            warn!("GCC ACTIVE");
 
-            let mut bitrate_man = BITRATE_MANAGER.lock(); 
-            bitrate_man.gcc_estimator = Some(GccBandwidthEstimator::new(fps as f64, Instant::now())); 
+            let mut bitrate_man = BITRATE_MANAGER.lock();
+            bitrate_man.gcc_estimator =
+                Some(GccBandwidthEstimator::new(fps as f64, Instant::now()));
         }
         BitrateMode::NadaPort {} => {
-            warn!("NADA ACTIVE"); 
+            warn!("NADA ACTIVE");
 
-            BITRATE_MANAGER.lock().nada_sender = Some(Arc::new(Mutex::new(NadaSender::new(Instant::now())))); 
-            // nada_sender_object = Some(NadaSender::new(Instant::now())); 
+            BITRATE_MANAGER.lock().nada_sender =
+                Some(Arc::new(Mutex::new(NadaSender::new(Instant::now()))));
+            // nada_sender_object = Some(NadaSender::new(Instant::now()));
         }
         _ => {}
     }
@@ -999,7 +1012,7 @@ fn connection_pipeline(
                 let Ok(client_stats) = data.get_header() else {
                     return;
                 };
-
+                
                 if let Some(stats) = &mut *STATISTICS_MANAGER.lock() {
                     let timestamp = client_stats.target_timestamp;
                     let decoder_latency = client_stats.video_decode;
@@ -1108,6 +1121,11 @@ fn connection_pipeline(
                     }
 
                     ClientControlPacket::NetworkStatistics(network_stats) => {
+                        // Reset the stats watchdog on every client_stats packet, even if the
+                        // frame_id below turns out to be evicted from the tracker: the client is
+                        // still alive and reporting, so the link hasn't actually stalled.
+                        BITRATE_MANAGER.lock().report_stats_received();
+
                         if let Some(stats) = &mut *STATISTICS_MANAGER.lock() {
                             let now = Instant::now();
 
@@ -1134,7 +1152,7 @@ fn connection_pipeline(
                                 );
 
                                 if network_stats.nada_stats.nada_feedback {
-                                    warn!("Nada feedback received"); 
+                                    // warn!("Nada feedback received");
                                     let client_stats = network_stats.nada_stats.clone();
                                     let feedback_report = NADAFeedbackReport::new(
                                         client_stats.nada_rmode,
@@ -1159,17 +1177,20 @@ fn connection_pipeline(
                                         // t0 reference NadaSender uses internally for t_curr,
                                         // otherwise the RTT computed inside
                                         // update_on_receive_feedback is meaningless.
-                                        let send_timestamp_us = send_instant
-                                            .duration_since(nada_sender.t0)
-                                            .as_micros() as i64;
+                                        let send_timestamp_us =
+                                            send_instant.duration_since(nada_sender.t0).as_micros()
+                                                as i64;
                                         nada_sender.update_on_receive_feedback(
                                             now,
                                             send_timestamp_us,
                                             feedback_report,
                                             fps as f64,
                                         );
-                                        bitrate_man.last_nada_target_bitrate_mbps =
-                                            Some(nada_sender.get_target_bitrate() as f64 / 1024.0 / 1024.0);
+                                        bitrate_man.last_nada_target_bitrate_mbps = Some(
+                                            nada_sender.get_target_bitrate() as f64
+                                                / 1024.0
+                                                / 1024.0,
+                                        );
                                     }
                                 }
                             }

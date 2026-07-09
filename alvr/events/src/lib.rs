@@ -1,4 +1,6 @@
-use alvr_common::{info, BandwidthUsage, DeviceMotion, LogEntry, Pose, RateControlState, RateUpdateMode};
+use alvr_common::{
+    info, BandwidthUsage, DeviceMotion, LogEntry, Pose, RateControlState, RateUpdateMode,
+};
 use alvr_packets::{AudioDevicesList, ButtonValue, EverestCommand};
 use alvr_session::SessionConfig;
 use serde::{Deserialize, Serialize};
@@ -135,12 +137,11 @@ pub struct HeuristicStats {
 
 #[derive(Serialize, Deserialize, Clone, Debug, Copy, Default)]
 pub struct EverestStats {
-    pub control_order: EverestCommand, 
-    pub new_bitrate: f32, 
-    pub d_short: f32, 
-    pub d_long: f32, 
-    pub capacity_estimation: f32, 
-
+    pub control_order: EverestCommand,
+    pub new_bitrate: f32,
+    pub d_short: f32,
+    pub d_long: f32,
+    pub capacity_estimation: f32,
 }
 #[derive(Serialize, Deserialize, Clone, Debug, Copy, Default)]
 pub struct GCCstats {
@@ -167,7 +168,6 @@ pub struct NADAstats {
     pub p_loss: f64,
     pub new_bitrate_bps: f32,
 }
-
 
 #[derive(Serialize, Deserialize, Clone, Debug)]
 pub struct TrackingEvent {
@@ -205,7 +205,7 @@ pub enum EventType {
     HeuristicStats(HeuristicStats),
     EverestStats(EverestStats),
     GCCstats(GCCstats),
-    NADAstats(NADAstats), 
+    NADAstats(NADAstats),
     Tracking(Box<TrackingEvent>),
     Buttons(Vec<ButtonEvent>),
     Haptics(HapticsEvent),

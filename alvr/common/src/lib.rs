@@ -1,15 +1,12 @@
 mod average;
 mod connection_result;
+mod gcc_nada_estimator;
 mod inputs;
 mod logging;
 mod primitives;
 mod timely;
 mod version;
 mod weighted;
-mod gcc_nada_estimator;
-
-
-
 
 use once_cell::sync::Lazy;
 use parking_lot::{Condvar, Mutex, RwLockWriteGuard};
@@ -25,6 +22,7 @@ pub use settings_schema;
 
 pub use average::*;
 pub use connection_result::*;
+pub use gcc_nada_estimator::*;
 pub use inputs::*;
 pub use log::{debug, error, info, warn};
 pub use logging::*;
@@ -32,9 +30,6 @@ pub use primitives::*;
 pub use timely::*;
 pub use version::*;
 pub use weighted::*;
-pub use gcc_nada_estimator::*; 
-
-
 
 pub const ALVR_NAME: &str = "ALVR";
 
